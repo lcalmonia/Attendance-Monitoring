@@ -57,10 +57,11 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 };
 
 const AuthenticatedApp: React.FC = () => {
-  const { users, switchUser } = useApp();
+  const { users, switchUser, isHydrated } = useApp();
   const [status, setStatus] = useState<'checking' | 'login' | 'ready'>('checking');
 
   useEffect(() => {
+    if (!isHydrated) return;
     authApi.session()
       .then((session) => {
         if (!session.authenticated || !session.userId) throw new Error('No session');
@@ -76,7 +77,7 @@ const AuthenticatedApp: React.FC = () => {
         clearAuthToken();
         setStatus('login');
       });
-  }, [users, switchUser]);
+  }, [users, isHydrated]);
 
   const handleAuthenticated = (userId: string) => {
     const user = users.find((item) => item.id === userId);
@@ -93,7 +94,7 @@ const AuthenticatedApp: React.FC = () => {
     setStatus('login');
   };
 
-  if (status === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
+  if (!isHydrated || status === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
   if (status === 'login') return <LoginScreen onAuthenticated={handleAuthenticated} />;
   return <MainLayout onLogout={handleLogout} />;
 };
