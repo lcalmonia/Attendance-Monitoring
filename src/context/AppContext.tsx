@@ -821,7 +821,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const countedStart = Math.max(actualInMin, requiredInMin);
       const countedEnd = Math.min(actualOutMin, requiredOutMin);
       const scheduledWindowMinutes = Math.max(0, countedEnd - countedStart);
-      const totalWorkMins = Math.max(0, scheduledWindowMinutes - (existing.actualBreakMinutes || 0));
+      const actualBreakMinutes = existing.breakOut
+        ? existing.breakIn
+          ? existing.actualBreakMinutes || calculateMinutesBetween(existing.breakOut.slice(0, 5), existing.breakIn.slice(0, 5))
+          : calculateMinutesBetween(existing.breakOut.slice(0, 5), actualOut)
+        : 0;
+      const overBreakMinutes = Math.max(0, actualBreakMinutes - existing.requiredBreakMinutes);
+      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
+      const totalWorkMins = Math.max(0, scheduledWindowMinutes - actualBreakMinutes);
       const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
       const undertimeMinutes = Math.max(0, requiredOutMin - actualOutMin);
       const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
@@ -841,6 +848,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? {
                 ...r,
                 timeOut: timeStr,
+                actualBreakMinutes,
+                overBreakMinutes,
+                overBreakDeductions,
                 totalWorkHours,
                 undertimeMinutes,
                 undertimeDeductions,
