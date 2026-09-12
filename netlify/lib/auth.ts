@@ -7,6 +7,11 @@ export function normalizeLogin(value: string) {
   return value.trim().toLowerCase();
 }
 
+export function normalizeMobile(value: string) {
+  const digits = value.replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
 export function hashPassword(password: string, salt = randomBytes(16).toString("hex")) {
   if (password.length < 8) throw new Error("Password must be at least 8 characters.");
   const derived = scryptSync(password, salt, 64).toString("hex");
