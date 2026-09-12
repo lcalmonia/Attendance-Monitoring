@@ -4,7 +4,7 @@ import { authApi } from "../services/auth";
 import { useApp } from "../context/AppContext";
 
 export const ChangePasswordScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
-  const { currentUser, updateEmployee } = useApp();
+  const { currentUser, completeEmployeeOnboarding } = useApp();
   const [currentPassword, setCurrentPassword] = useState("");
   const [email, setEmail] = useState(currentUser.email || "");
   const [mobileNumber, setMobileNumber] = useState(currentUser.mobileNumber || "");
@@ -21,11 +21,11 @@ export const ChangePasswordScreen: React.FC<{ onComplete: () => void }> = ({ onC
     if (newPassword !== confirmPassword) return setError("Passwords do not match.");
     setBusy(true); setError("");
     try {
-      updateEmployee(currentUser.id, {
-        email: email.trim(),
-        mobileNumber: mobileNumber.trim(),
-      });
-      await authApi.syncLogin(currentUser.id, currentUser.employeeId, mobileNumber.trim());
+      await completeEmployeeOnboarding(
+        currentUser.id,
+        email.trim(),
+        mobileNumber.trim()
+      );
       await authApi.changePassword(currentPassword, newPassword);
       onComplete();
     } catch (err) {
