@@ -25,6 +25,7 @@ export const ChangePasswordScreen: React.FC<{ onComplete: () => void }> = ({ onC
         email: email.trim(),
         mobileNumber: mobileNumber.trim(),
       });
+      await authApi.syncLogin(currentUser.id, currentUser.employeeId, mobileNumber.trim());
       await authApi.changePassword(currentPassword, newPassword);
       onComplete();
     } catch (err) {
