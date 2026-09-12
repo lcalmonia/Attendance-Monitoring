@@ -24,6 +24,7 @@ import { calculateRates, calculateScheduleMetrics } from '../services/payrollEng
 export const EmployeeManagement: React.FC = () => {
   const {
     employees,
+    users,
     businesses,
     compensations,
     schedules,
@@ -116,12 +117,16 @@ export const EmployeeManagement: React.FC = () => {
   });
 
   const handleOpenEditEmployee = (emp: Employee) => {
+    // Contact details are entered by the employee during initial account setup.
+    // Prefer the linked user record as the source of truth, with the employee
+    // record as a fallback for older records.
+    const linkedUser = users.find((user) => user.id === emp.id);
     setEditingEmployee(emp);
     setEditEmpData({
       employeeId: emp.employeeId,
       fullName: emp.fullName,
-      email: emp.email,
-      mobileNumber: emp.mobileNumber,
+      email: linkedUser?.email || emp.email || '',
+      mobileNumber: linkedUser?.mobileNumber || emp.mobileNumber || '',
       businessId: emp.businessId,
       position: emp.position,
       employmentStatus: emp.employmentStatus,
