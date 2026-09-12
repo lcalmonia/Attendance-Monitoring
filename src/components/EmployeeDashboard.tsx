@@ -19,7 +19,7 @@ import {
   Coffee,
   HelpCircle,
 } from 'lucide-react';
-import { calculateEmployeePayroll, calculateScheduleMetrics } from '../services/payrollEngine';
+import { calculateEmployeePayroll, calculateScheduleMetrics, getScheduleForDay } from '../services/payrollEngine';
 import { PayslipModal } from './PayslipModal';
 import { PayrollRecord } from '../types';
 
@@ -62,10 +62,11 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   const compensation = compensations.find((c) => c.employeeId === currentUser.id);
   const schedule = schedules.find((s) => s.employeeId === currentUser.id);
 
-  const todayStr = currentTime.toISOString().slice(0, 10);
+  const todayStr = `${currentTime.getFullYear()}-${String(currentTime.getMonth() + 1).padStart(2, '0')}-${String(currentTime.getDate()).padStart(2, '0')}`;
   const todayRecord = attendanceRecords.find(
     (r) => r.employeeId === currentUser.id && r.date === todayStr
   );
+  const todaySchedule = schedule ? getScheduleForDay(schedule, currentTime.getDay()) : undefined;
 
   // Active current period (Sept 1-15, 2026)
   const activePeriod =
@@ -76,12 +77,13 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   // Work dates the employee is scheduled to report during the active cut-off.
   const cutoffScheduleDates = (() => {
     if (!activePeriod || !schedule) return [];
-    const result: Array<{ date: string; dayLabel: string; holidayName?: string }> = [];
+    const result: Array<{ date: string; dayLabel: string; holidayName?: string; timeIn: string; breakOut: string; breakIn: string; timeOut: string }> = [];
     const cursor = new Date(`${activePeriod.startDate}T00:00:00`);
     const end = new Date(`${activePeriod.endDate}T00:00:00`);
 
     while (cursor <= end) {
-      if (schedule.requiredDutyDays.includes(cursor.getDay())) {
+      const daily = getScheduleForDay(schedule, cursor.getDay());
+      if (daily.enabled) {
         const date = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
         const holiday = holidays.find((item) => item.date === date);
         result.push({
@@ -92,6 +94,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
             day: 'numeric',
           }),
           holidayName: holiday?.name,
+          timeIn: daily.requiredTimeIn,
+          breakOut: daily.requiredBreakOut,
+          breakIn: daily.requiredBreakIn,
+          timeOut: daily.requiredTimeOut,
         });
       }
       cursor.setDate(cursor.getDate() + 1);
@@ -262,7 +268,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
               Today's Required Schedule
             </h3>
             <span className="text-[11px] font-semibold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
-              Net: {schedule?.netRequiredWorkingHours || 8}h Shift
+              Net: {todaySchedule ? calculateScheduleMetrics(todaySchedule.requiredTimeIn, todaySchedule.requiredBreakOut, todaySchedule.requiredBreakIn, todaySchedule.requiredTimeOut).netRequiredWorkingHours : schedule?.netRequiredWorkingHours || 8}h Shift
             </span>
           </div>
 
@@ -270,25 +276,25 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
             <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
               <span className="text-slate-400">Required Time In:</span>
               <span className="font-semibold text-white text-sm font-mono">
-                {schedule?.requiredTimeIn || '08:00 AM'}
+                {todaySchedule?.requiredTimeIn || schedule?.requiredTimeIn || '08:00'}
               </span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
               <span className="text-slate-400">Required Break Out:</span>
               <span className="font-semibold text-white font-mono">
-                {schedule?.requiredBreakOut || '12:00 PM'}
+                {todaySchedule?.requiredBreakOut || schedule?.requiredBreakOut || '12:00'}
               </span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
               <span className="text-slate-400">Required Break In:</span>
               <span className="font-semibold text-white font-mono">
-                {schedule?.requiredBreakIn || '01:00 PM'}
+                {todaySchedule?.requiredBreakIn || schedule?.requiredBreakIn || '13:00'}
               </span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
               <span className="text-slate-400">Required Time Out:</span>
               <span className="font-semibold text-white text-sm font-mono">
-                {schedule?.requiredTimeOut || '05:00 PM'}
+                {todaySchedule?.requiredTimeOut || schedule?.requiredTimeOut || '17:00'}
               </span>
             </div>
 
@@ -303,7 +309,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
               </div>
               <div className="flex justify-between text-emerald-400 font-semibold mt-1 pt-1 border-t border-slate-800">
                 <span>Net Working Hours:</span>
-                <span>{schedule?.netRequiredWorkingHours || 8} hrs</span>
+                <span>{todaySchedule ? calculateScheduleMetrics(todaySchedule.requiredTimeIn, todaySchedule.requiredBreakOut, todaySchedule.requiredBreakIn, todaySchedule.requiredTimeOut).netRequiredWorkingHours : schedule?.netRequiredWorkingHours || 8} hrs</span>
               </div>
             </div>
 
