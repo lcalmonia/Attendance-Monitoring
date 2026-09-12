@@ -65,6 +65,7 @@ interface AppContextType {
   auditLogs: AuditLog[];
   notifications: AppNotification[];
   systemSettings: SystemSettings;
+  isHydrated: boolean;
 
   // Actions
   login: (emailOrEmpId: string) => boolean;
@@ -237,10 +238,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (Array.isArray(remote.auditLogs)) setAuditLogs(remote.auditLogs as AuditLog[]);
         if (Array.isArray(remote.notifications)) setNotifications(remote.notifications as AppNotification[]);
         if (remote.systemSettings && typeof remote.systemSettings === 'object') setSystemSettings(remote.systemSettings as SystemSettings);
-        if (typeof remote.currentUserId === 'string') {
-          const remoteUser = (remote.users as User[] | undefined)?.find((user) => user.id === remote.currentUserId);
-          if (remoteUser) setCurrentUser(remoteUser);
-        }
       })
       .catch((error) => {
         console.warn('Netlify shared state is unavailable; using local fallback until the next successful save.', error);
@@ -274,7 +271,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         auditLogs,
         notifications,
         systemSettings,
-        currentUserId: currentUser.id,
       }).catch((error) => console.error('Failed to save shared application state', error));
     }, 500);
 
@@ -305,7 +301,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveStorage('audit_logs', auditLogs), [auditLogs]);
   useEffect(() => saveStorage('notifications', notifications), [notifications]);
   useEffect(() => saveStorage('settings', systemSettings), [systemSettings]);
-  useEffect(() => saveStorage('current_user_id', currentUser.id), [currentUser]);
 
   // Helper to log audit
   const logAudit = (
@@ -1200,6 +1195,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         auditLogs,
         notifications,
         systemSettings,
+        isHydrated,
         login,
         switchUser,
         logout,
