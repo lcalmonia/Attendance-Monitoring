@@ -47,4 +47,6 @@ export const authApi = {
     api("/api/auth/provision", { method: "POST", body: JSON.stringify({ userId, employeeId, temporaryPassword, mobileNumber }) }),
   deleteAccount: (userId: string) =>
     api("/api/auth/delete", { method: "POST", body: JSON.stringify({ userId }) }),
+  syncLogin: (userId: string, employeeId: string, mobileNumber: string) =>
+    api("/api/auth/sync-login", { method: "POST", body: JSON.stringify({ userId, employeeId, mobileNumber }) }),
 };
