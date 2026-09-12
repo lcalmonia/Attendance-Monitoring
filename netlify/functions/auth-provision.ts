@@ -15,7 +15,7 @@ export default async (req: Request) => {
   const body = await req.json().catch(() => null);
   const userId = String(body?.userId || "");
   const employeeId = String(body?.employeeId || "");
-  const temporaryPassword = String(body?.temporaryPassword || employeeId);
+  const temporaryPassword = normalizeLogin(String(body?.temporaryPassword || employeeId));
   const mobileNumber = String(body?.mobileNumber || "");
   const mobileLogin = mobileNumber ? normalizeMobile(mobileNumber) : null;
 
@@ -23,7 +23,7 @@ export default async (req: Request) => {
 
   await db.sql`
     INSERT INTO auth_accounts (user_id, login_id, mobile_login, password_hash, must_change_password, is_active)
-    VALUES (${userId}, ${normalizeLogin(employeeId)}, ${mobileLogin}, ${hashPassword(temporaryPassword)}, true, true)
+    VALUES (${userId}, ${normalizeLogin(employeeId)}, ${mobileLogin}, ${hashPassword(temporaryPassword, undefined, 1)}, true, true)
     ON CONFLICT (user_id)
     DO UPDATE SET login_id = EXCLUDED.login_id, mobile_login = EXCLUDED.mobile_login, password_hash = EXCLUDED.password_hash,
       must_change_password = true, is_active = true, updated_at = NOW()
