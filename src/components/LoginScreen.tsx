@@ -85,10 +85,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onAuthenticated }) => 
           <>
             <div className="mb-5">
               <h2 className="font-semibold text-lg">Sign in</h2>
-              <p className="text-sm text-slate-400 mt-1">Use your Employee ID and password.</p>
+              <p className="text-sm text-slate-400 mt-1">Use your Employee ID or mobile number and password.</p>
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
-              <label className="block"><span className="text-xs text-slate-400">Employee ID</span><div className="relative mt-1"><UserRound className="absolute left-3 top-3 w-4 h-4 text-slate-500" /><input required value={loginId} onChange={(e) => setLoginId(e.target.value)} className="w-full rounded-lg bg-slate-950 border border-slate-700 pl-10 pr-3 py-2.5 outline-none focus:border-blue-500" placeholder="Enter Employee ID" /></div></label>
+              <label className="block"><span className="text-xs text-slate-400">Employee ID or Mobile Number</span><div className="relative mt-1"><UserRound className="absolute left-3 top-3 w-4 h-4 text-slate-500" /><input required value={loginId} onChange={(e) => setLoginId(e.target.value)} className="w-full rounded-lg bg-slate-950 border border-slate-700 pl-10 pr-3 py-2.5 outline-none focus:border-blue-500" placeholder="Enter Employee ID or mobile number" /></div></label>
               <label className="block"><span className="text-xs text-slate-400">Password</span><div className="relative mt-1"><LockKeyhole className="absolute left-3 top-3 w-4 h-4 text-slate-500" /><input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-lg bg-slate-950 border border-slate-700 pl-10 pr-3 py-2.5 outline-none focus:border-blue-500" placeholder="Enter password" /></div></label>
               {error && <div className="text-sm text-red-300 flex gap-2"><AlertCircle className="w-4 h-4 mt-0.5" />{error}</div>}
               <button disabled={busy} className="w-full rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-60 py-2.5 font-semibold">{busy ? "Signing in…" : "Sign in"}</button>
