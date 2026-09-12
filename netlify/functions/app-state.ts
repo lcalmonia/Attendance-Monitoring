@@ -1,9 +1,12 @@
 import type { Config } from "@netlify/functions";
 import { getDatabase } from "@netlify/database";
+import { getSessionUserId } from "../lib/auth";
 
 type AppStateRow = { state: unknown; updated_at: string };
 
 export default async (req: Request) => {
+  const userId = await getSessionUserId(req);
+  if (!userId) return Response.json({ error: "Unauthorized." }, { status: 401 });
   const db = getDatabase();
 
   if (req.method === "GET") {
