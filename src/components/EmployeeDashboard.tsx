@@ -82,7 +82,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
 
     while (cursor <= end) {
       if (schedule.requiredDutyDays.includes(cursor.getDay())) {
-        const date = cursor.toISOString().slice(0, 10);
+        const date = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
         const holiday = holidays.find((item) => item.date === date);
         result.push({
           date,
