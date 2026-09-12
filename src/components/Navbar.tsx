@@ -17,14 +17,13 @@ import {
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  onLogout: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onLogout }) => {
   const {
     currentUser,
-    users,
-    switchUser,
-    businesses,
+        businesses,
     notifications,
     markNotificationRead,
     markAllNotificationsRead,
@@ -57,35 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           </span>
         </div>
 
-        {/* Quick Role Switcher */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-slate-400 text-[11px] hidden md:inline">Quick Switch Demo Account:</span>
-          <div className="flex items-center gap-1">
-            {users.slice(0, 5).map((u) => {
-              const isSelected = u.id === currentUser.id;
-              const roleTag =
-                u.role === 'super_admin'
-                  ? 'Super Admin'
-                  : u.role === 'business_admin'
-                  ? 'Biz Admin'
-                  : 'Employee';
-              return (
-                <button
-                  key={u.id}
-                  onClick={() => switchUser(u.id)}
-                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                    isSelected
-                      ? 'bg-blue-600 text-white font-semibold shadow-sm'
-                      : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                  }`}
-                  title={`${u.fullName} (${roleTag})`}
-                >
-                  {u.fullName.split(' ')[0]} ({roleTag.slice(0, 3)})
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <div className="text-slate-500 text-[11px] hidden md:block">Secure Employee Attendance & Payroll Portal</div>
       </div>
 
       {/* Main Navbar */}
