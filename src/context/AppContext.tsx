@@ -37,6 +37,7 @@ import {
   INITIAL_SYSTEM_SETTINGS,
 } from '../services/initialData';
 import { loadAppState, saveAppState } from '../services/netlifyState';
+import { authApi } from '../services/auth';
 import {
   calculateRates,
   calculateScheduleMetrics,
@@ -452,6 +453,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCompensations((prev) => [...prev, newComp]);
     setSchedules((prev) => [...prev, newSched]);
 
+    authApi.provision(newId, newEmployee.employeeId, newEmployee.employeeId)
+      .catch((error) => console.error('Employee account provisioning failed', error));
+
     logAudit('Add Employee', 'employee', 'None', `${newEmployee.fullName} (${newEmployee.employeeId})`, `Position: ${newEmployee.position}`);
   };
 
@@ -488,13 +492,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetPassword = (userId: string) => {
     const current = employees.find((e) => e.id === userId);
     if (!current) return;
-    logAudit('Reset Password', 'employee', 'Old Password', 'Temporary Password Generated', `User: ${current.fullName}`);
-    pushNotification({
-      targetUserId: userId,
-      title: 'Password Reset',
-      message: 'Your account password was reset by Super Admin to the default (emp123).',
-      type: 'info',
-    });
+    authApi.provision(userId, current.employeeId, current.employeeId)
+      .then(() => {
+        logAudit('Reset Password', 'employee', 'Old Password', 'Temporary password reset', `User: ${current.fullName}`);
+        pushNotification({
+          targetUserId: userId,
+          title: 'Password Reset',
+          message: 'Your password was reset to your Employee ID. You must change it after signing in.',
+          type: 'info',
+        });
+      })
+      .catch((error) => console.error('Password reset failed', error));
   };
 
   // Compensation Update (Preserves history!)
