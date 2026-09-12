@@ -572,9 +572,9 @@ export const EmployeeManagement: React.FC = () => {
 
       {/* CONFIGURE COMPENSATION MODAL (Preserves historical data!) */}
       {managingCompEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-3xl w-full max-h-[calc(100vh-1rem)] sm:max-h-[90vh] shadow-2xl relative flex flex-col overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between p-4 sm:p-6 pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <DollarSign className="w-5 h-5 text-emerald-400" />
                 <h3 className="font-bold text-white text-base">Configure Compensation</h3>
@@ -728,7 +728,7 @@ export const EmployeeManagement: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="sticky bottom-0 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-slate-900/95 backdrop-blur border-t border-slate-800 flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setManagingCompEmp(null)}
@@ -765,7 +765,7 @@ export const EmployeeManagement: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSaveSched} className="space-y-4 mt-4 text-xs">
+            <form onSubmit={handleSaveSched} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 text-xs">
               <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
                 <div>
                   <span className="text-slate-500">Employee:</span>{' '}
@@ -781,6 +781,7 @@ export const EmployeeManagement: React.FC = () => {
                     Each day can have its own opening/closing shift and break schedule.
                   </p>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {[
                   { day: 1, label: 'Monday' },
                   { day: 2, label: 'Tuesday' },
@@ -852,6 +853,7 @@ export const EmployeeManagement: React.FC = () => {
                     </div>
                   );
                 })}
+                </div>
               </div>
 
               {/* Schedule Duration & Break Calculation */}

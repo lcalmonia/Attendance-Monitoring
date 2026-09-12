@@ -72,8 +72,8 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setAc
 
   return (
     <div className="bg-slate-800 border-b border-slate-700/80 sticky top-[89px] z-30 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center space-x-1 overflow-x-auto py-2 scrollbar-none">
+      <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-1 overflow-x-auto md:overflow-visible flex-nowrap md:flex-wrap py-2 scrollbar-none md:justify-start">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -82,7 +82,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setAc
                 key={tab.id}
                 id={`tab-${tab.id}`}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
+                className={`shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
                   isActive
                     ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
