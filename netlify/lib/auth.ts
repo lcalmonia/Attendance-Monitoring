@@ -12,8 +12,14 @@ export function normalizeMobile(value: string) {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-export function hashPassword(password: string, salt = randomBytes(16).toString("hex")) {
-  if (password.length < 8) throw new Error("Password must be at least 8 characters.");
+export function hashPassword(
+  password: string,
+  salt = randomBytes(16).toString("hex"),
+  minimumLength = 8
+) {
+  if (password.length < minimumLength) {
+    throw new Error(`Password must be at least ${minimumLength} characters.`);
+  }
   const derived = scryptSync(password, salt, 64).toString("hex");
   return `scrypt:${salt}:${derived}`;
 }
