@@ -22,7 +22,8 @@ export default async (req: Request) => {
   `;
   const account = rows[0];
 
-  if (!account || !account.is_active || !verifyPassword(password, account.password_hash)) {
+  const passwordToVerify = account?.must_change_password ? normalizeLogin(password) : password;
+  if (!account || !account.is_active || !verifyPassword(passwordToVerify, account.password_hash)) {
     return json({ error: "Invalid credentials." }, 401);
   }
 
