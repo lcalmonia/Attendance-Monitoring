@@ -34,8 +34,8 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={onLogout} />
       <NavigationTabs activeTab={activeTab} setActiveTab={setActiveTab} />
       <main className="flex-1 pb-16">
-        {activeTab === 'dashboard' && (currentUser.role === 'employee' ? <EmployeeDashboard /> : <SuperAdminDashboard setActiveTab={setActiveTab} />)}
-        {activeTab === 'expected_salary' && <EmployeeDashboard />}
+        {activeTab === 'dashboard' && (currentUser.role === 'employee' ? <EmployeeDashboard view="dashboard" /> : <SuperAdminDashboard setActiveTab={setActiveTab} />)}
+        {activeTab === 'expected_salary' && <EmployeeDashboard view="salary" />}
         {activeTab === 'attendance' && <AttendanceManagement />}
         {activeTab === 'employees' && <EmployeeManagement />}
         {activeTab === 'businesses' && <BusinessManagement />}
