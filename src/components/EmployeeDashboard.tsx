@@ -512,7 +512,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
                       {day.holidayName && <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">{day.holidayName}</span>}
                     </div>
                     <div className="text-xs text-slate-400 mt-2 font-mono">
-                      {schedule?.requiredTimeIn} – {schedule?.requiredBreakOut} / {schedule?.requiredBreakIn} – {schedule?.requiredTimeOut}
+                      {day.timeIn} – {day.breakOut} / {day.breakIn} – {day.timeOut}
                     </div>
                   </div>
                 ))}
