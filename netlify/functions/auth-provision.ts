@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { db, getSessionUserId, hashPassword, json, normalizeLogin } from "../lib/auth";
+import { db, getSessionUserId, hashPassword, json, normalizeLogin, normalizeMobile } from "../lib/auth";
 
 export default async (req: Request) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -16,14 +16,16 @@ export default async (req: Request) => {
   const userId = String(body?.userId || "");
   const employeeId = String(body?.employeeId || "");
   const temporaryPassword = String(body?.temporaryPassword || employeeId);
+  const mobileNumber = String(body?.mobileNumber || "");
+  const mobileLogin = mobileNumber ? normalizeMobile(mobileNumber) : null;
 
   if (!userId || !employeeId) return json({ error: "User ID and employee ID are required." }, 400);
 
   await db.sql`
-    INSERT INTO auth_accounts (user_id, login_id, password_hash, must_change_password, is_active)
-    VALUES (${userId}, ${normalizeLogin(employeeId)}, ${hashPassword(temporaryPassword)}, true, true)
+    INSERT INTO auth_accounts (user_id, login_id, mobile_login, password_hash, must_change_password, is_active)
+    VALUES (${userId}, ${normalizeLogin(employeeId)}, ${mobileLogin}, ${hashPassword(temporaryPassword)}, true, true)
     ON CONFLICT (user_id)
-    DO UPDATE SET login_id = EXCLUDED.login_id, password_hash = EXCLUDED.password_hash,
+    DO UPDATE SET login_id = EXCLUDED.login_id, mobile_login = EXCLUDED.mobile_login, password_hash = EXCLUDED.password_hash,
       must_change_password = true, is_active = true, updated_at = NOW()
   `;
 
