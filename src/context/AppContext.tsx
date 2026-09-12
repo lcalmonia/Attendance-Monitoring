@@ -454,7 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCompensations((prev) => [...prev, newComp]);
     setSchedules((prev) => [...prev, newSched]);
 
-    authApi.provision(newId, newEmployee.employeeId, newEmployee.employeeId)
+    authApi.provision(newId, newEmployee.employeeId, newEmployee.employeeId, newEmployee.mobileNumber)
       .catch((error) => console.error('Employee account provisioning failed', error));
 
     logAudit('Add Employee', 'employee', 'None', `${newEmployee.fullName} (${newEmployee.employeeId})`, `Position: ${newEmployee.position}`);
@@ -493,7 +493,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetPassword = (userId: string) => {
     const current = employees.find((e) => e.id === userId);
     if (!current) return;
-    authApi.provision(userId, current.employeeId, current.employeeId)
+    authApi.provision(userId, current.employeeId, current.employeeId, current.mobileNumber)
       .then(() => {
         logAudit('Reset Password', 'employee', 'Old Password', 'Temporary password reset', `User: ${current.fullName}`);
         pushNotification({
