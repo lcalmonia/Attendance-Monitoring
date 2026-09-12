@@ -14,15 +14,38 @@ import {
 import { Holiday, HolidayType } from '../types';
 
 export const HolidayManagement: React.FC = () => {
-  const { holidays, businesses, addHoliday, deleteHoliday, currentUser } = useApp();
+  const { holidays, businesses, addHoliday, updateHoliday, deleteHoliday, currentUser } = useApp();
 
   const [showModal, setShowModal] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [type, setType] = useState<HolidayType>('regular');
   const [rateMultiplier, setRateMultiplier] = useState(2.0);
   const [applicableBusinesses, setApplicableBusinesses] = useState<string[]>(['all']);
   const [notes, setNotes] = useState('');
+
+  const handleOpenAdd = () => {
+    setEditingHoliday(null);
+    setName('');
+    setDate(new Date().toISOString().slice(0, 10));
+    setType('regular');
+    setRateMultiplier(2.0);
+    setApplicableBusinesses(['all']);
+    setNotes('');
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (h: Holiday) => {
+    setEditingHoliday(h);
+    setName(h.name);
+    setDate(h.date);
+    setType(h.type);
+    setRateMultiplier(h.rateMultiplier);
+    setApplicableBusinesses(Array.isArray(h.applicableBusinesses) ? h.applicableBusinesses : ['all']);
+    setNotes(h.notes || '');
+    setShowModal(true);
+  };
 
   const handleTypeChange = (newType: HolidayType) => {
     setType(newType);
@@ -34,15 +57,27 @@ export const HolidayManagement: React.FC = () => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    addHoliday({
-      name,
-      date,
-      type,
-      rateMultiplier,
-      applicableBusinesses,
-      notes,
-    });
+    if (editingHoliday) {
+      updateHoliday(editingHoliday.id, {
+        name,
+        date,
+        type,
+        rateMultiplier,
+        applicableBusinesses,
+        notes,
+      });
+    } else {
+      addHoliday({
+        name,
+        date,
+        type,
+        rateMultiplier,
+        applicableBusinesses,
+        notes,
+      });
+    }
     setShowModal(false);
+    setEditingHoliday(null);
     setName('');
     setDate('');
     setNotes('');
@@ -66,7 +101,7 @@ export const HolidayManagement: React.FC = () => {
 
         {currentUser.role === 'super_admin' && (
           <button
-            onClick={() => setShowModal(true)}
+            onClick={handleOpenAdd}
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5 self-start md:self-auto"
           >
             <Plus className="w-4 h-4" /> Add Projected Holiday
@@ -120,13 +155,22 @@ export const HolidayManagement: React.FC = () => {
                     {isAll ? 'All Branches' : `${appBusinesses.length} Branch(es)`}
                   </span>
                   {currentUser.role === 'super_admin' && (
-                    <button
-                      onClick={() => deleteHoliday(h.id)}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors"
-                      title="Delete Holiday"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(h)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition-colors"
+                        title="Edit Holiday Configuration"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => deleteHoliday(h.id)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                        title="Delete Holiday"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -135,17 +179,22 @@ export const HolidayManagement: React.FC = () => {
         })}
       </div>
 
-      {/* Add Holiday Modal */}
+      {/* Add / Edit Holiday Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-5 h-5 text-blue-400" />
-                <h3 className="font-bold text-white text-base">Add Projected Holiday</h3>
+                <h3 className="font-bold text-white text-base">
+                  {editingHoliday ? 'Edit Projected Holiday' : 'Add Projected Holiday'}
+                </h3>
               </div>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingHoliday(null);
+                }}
                 className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
@@ -161,7 +210,7 @@ export const HolidayManagement: React.FC = () => {
                   placeholder="e.g. Bonifacio Day / Davao City Charter Day"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -173,15 +222,15 @@ export const HolidayManagement: React.FC = () => {
                     required
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Holiday Classification:</label>
+                  <label className="block text-slate-400 mb-1 font-semibold">Classification:</label>
                   <select
                     value={type}
                     onChange={(e) => handleTypeChange(e.target.value as HolidayType)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
                   >
                     <option value="regular">Regular Holiday (2.0x)</option>
                     <option value="special_non_working">Special Non-Working (1.30x)</option>
@@ -204,34 +253,85 @@ export const HolidayManagement: React.FC = () => {
                   required
                   value={rateMultiplier}
                   onChange={(e) => setRateMultiplier(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
                 />
               </div>
 
+              {/* Applicable Branches/Businesses Selection */}
               <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Notes / Proclamation Ref:</label>
+                <label className="block text-slate-400 mb-1 font-semibold">Applicable Branches / Businesses:</label>
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={applicableBusinesses.includes('all')}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setApplicableBusinesses(['all']);
+                        } else {
+                          setApplicableBusinesses(businesses.map((b) => b.id));
+                        }
+                      }}
+                      className="rounded border-slate-700 text-blue-600 focus:ring-0"
+                    />
+                    <span>All Businesses / Branches</span>
+                  </label>
+
+                  {!applicableBusinesses.includes('all') && (
+                    <div className="pt-2 border-t border-slate-800 space-y-1.5 pl-2">
+                      {businesses.map((biz) => {
+                        const isChecked = applicableBusinesses.includes(biz.id);
+                        return (
+                          <label key={biz.id} className="flex items-center gap-2 cursor-pointer text-slate-300">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setApplicableBusinesses([...applicableBusinesses, biz.id]);
+                                } else {
+                                  const filtered = applicableBusinesses.filter((b) => b !== biz.id);
+                                  setApplicableBusinesses(filtered.length === 0 ? ['all'] : filtered);
+                                }
+                              }}
+                              className="rounded border-slate-700 text-blue-600 focus:ring-0"
+                            />
+                            <span>{biz.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">Notes / Proclamation Reference:</label>
                 <input
                   type="text"
                   placeholder="e.g. Proclamation No. 902 / Special city holiday"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingHoliday(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md transition-colors"
                 >
-                  Save Holiday
+                  {editingHoliday ? 'Save Changes' : 'Add Holiday'}
                 </button>
               </div>
             </form>

@@ -99,6 +99,56 @@ export const EmployeeManagement: React.FC = () => {
   const [editTimeOut, setEditTimeOut] = useState('17:00');
   const [schedReason, setSchedReason] = useState('');
 
+  // Edit Employee Details Form State
+  const [editEmpData, setEditEmpData] = useState({
+    employeeId: '',
+    fullName: '',
+    email: '',
+    mobileNumber: '',
+    businessId: businesses[0]?.id || '',
+    position: '',
+    employmentStatus: 'regular' as EmploymentStatus,
+    dateHired: new Date().toISOString().slice(0, 10),
+    accountStatus: 'active' as AccountStatus,
+    role: 'employee' as UserRole,
+  });
+
+  const handleOpenEditEmployee = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEditEmpData({
+      employeeId: emp.employeeId,
+      fullName: emp.fullName,
+      email: emp.email,
+      mobileNumber: emp.mobileNumber,
+      businessId: emp.businessId,
+      position: emp.position,
+      employmentStatus: emp.employmentStatus,
+      dateHired: emp.dateHired || new Date().toISOString().slice(0, 10),
+      accountStatus: emp.accountStatus,
+      role: emp.role,
+    });
+  };
+
+  const handleSaveEmployeeDetails = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+
+    updateEmployee(editingEmployee.id, {
+      employeeId: editEmpData.employeeId,
+      fullName: editEmpData.fullName,
+      email: editEmpData.email,
+      mobileNumber: editEmpData.mobileNumber,
+      businessId: editEmpData.businessId,
+      position: editEmpData.position,
+      employmentStatus: editEmpData.employmentStatus,
+      dateHired: editEmpData.dateHired,
+      accountStatus: editEmpData.accountStatus,
+      role: editEmpData.role,
+    });
+
+    setEditingEmployee(null);
+  };
+
   // New Deduction Assignment State
   const [selectedDedType, setSelectedDedType] = useState(deductionTypes[0]?.id || '');
   const [dedAmount, setDedAmount] = useState(300);
@@ -322,8 +372,24 @@ export const EmployeeManagement: React.FC = () => {
                   <tr key={emp.id} className="hover:bg-slate-850 transition-colors">
                     {/* Name */}
                     <td className="py-3 px-4">
-                      <div className="font-bold text-white text-sm">{emp.fullName}</div>
-                      <div className="text-[10px] text-slate-400">{emp.email}</div>
+                      {currentUser.role === 'super_admin' ? (
+                        <button
+                          onClick={() => handleOpenEditEmployee(emp)}
+                          className="text-left group flex flex-col"
+                          title="Click to edit employee details"
+                        >
+                          <div className="font-bold text-white text-sm group-hover:text-indigo-400 flex items-center gap-1.5 transition-colors">
+                            {emp.fullName}
+                            <Edit2 className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          <div className="text-[10px] text-slate-400">{emp.email}</div>
+                        </button>
+                      ) : (
+                        <div>
+                          <div className="font-bold text-white text-sm">{emp.fullName}</div>
+                          <div className="text-[10px] text-slate-400">{emp.email}</div>
+                        </div>
+                      )}
                     </td>
 
                     {/* ID */}
@@ -374,6 +440,15 @@ export const EmployeeManagement: React.FC = () => {
                     {currentUser.role === 'super_admin' && (
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Edit Employee Details */}
+                          <button
+                            onClick={() => handleOpenEditEmployee(emp)}
+                            className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-colors"
+                            title="Edit Employee Details (Profile, Business, Role, Status)"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+
                           {/* Configure Compensation */}
                           <button
                             onClick={() => openCompModal(emp)}
@@ -898,6 +973,247 @@ export const EmployeeManagement: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT EMPLOYEE DETAILS MODAL */}
+      {editingEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl relative my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white text-base">Edit Employee Details</h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      {editingEmployee.employeeId}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Update personal information, branch assignment, employment status, and system access role.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingEmployee(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEmployeeDetails} className="space-y-4 mt-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Employee ID */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Employee ID / Badge Code:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editEmpData.employeeId}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, employeeId: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Full Name */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Full Legal Name:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editEmpData.fullName}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, fullName: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Email Address */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Email Address:</label>
+                  <input
+                    type="email"
+                    required
+                    value={editEmpData.email}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, email: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Mobile Number */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Mobile Number:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editEmpData.mobileNumber}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, mobileNumber: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Assigned Business */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Assigned Business / Branch:</label>
+                  <select
+                    value={editEmpData.businessId}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, businessId: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name} ({b.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Position / Job Title */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Position / Job Title:</label>
+                  <input
+                    type="text"
+                    required
+                    value={editEmpData.position}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, position: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Employment Status */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Employment Status:</label>
+                  <select
+                    value={editEmpData.employmentStatus}
+                    onChange={(e) =>
+                      setEditEmpData({ ...editEmpData, employmentStatus: e.target.value as EmploymentStatus })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="regular">Regular</option>
+                    <option value="probationary">Probationary</option>
+                    <option value="contractual">Contractual</option>
+                    <option value="part_time">Part-Time</option>
+                  </select>
+                </div>
+
+                {/* Date Hired */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Date Hired:</label>
+                  <input
+                    type="date"
+                    required
+                    value={editEmpData.dateHired}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, dateHired: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* User Role */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">System User Role:</label>
+                  <select
+                    value={editEmpData.role}
+                    onChange={(e) => setEditEmpData({ ...editEmpData, role: e.target.value as UserRole })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="employee">Employee (Self-Service Clock & Expected Salary)</option>
+                    <option value="business_admin">Business Admin (Branch Scoped Management)</option>
+                    <option value="super_admin">Super Admin (Full Company & System Control)</option>
+                  </select>
+                </div>
+
+                {/* Account Access Status */}
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Account Access Status:</label>
+                  <select
+                    value={editEmpData.accountStatus}
+                    onChange={(e) =>
+                      setEditEmpData({ ...editEmpData, accountStatus: e.target.value as AccountStatus })
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="active">Active (Can Login & Clock)</option>
+                    <option value="inactive">Inactive / Suspended (Blocked)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Associated Compensation & Schedule Quick Overview */}
+              <div className="pt-3 border-t border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Associated Compensation & Schedule
+                  </span>
+                  <span className="text-[10px] text-slate-500">Managed via dedicated audit-tracked modules</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] text-slate-400">Current Daily Rate</div>
+                      <div className="text-xs font-mono font-bold text-emerald-400">
+                        ₱
+                        {compensations
+                          .find((c) => c.employeeId === editingEmployee.id)
+                          ?.dailyRate.toFixed(2) || '0.00'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const emp = editingEmployee;
+                        setEditingEmployee(null);
+                        openCompModal(emp);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[11px] font-semibold transition-colors"
+                    >
+                      Configure Pay
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] text-slate-400">Duty Schedule</div>
+                      <div className="text-xs font-mono font-bold text-teal-400">
+                        {schedules.find((s) => s.employeeId === editingEmployee.id)?.requiredTimeIn || '08:00'} -{' '}
+                        {schedules.find((s) => s.employeeId === editingEmployee.id)?.requiredTimeOut || '17:00'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const emp = editingEmployee;
+                        setEditingEmployee(null);
+                        openSchedModal(emp);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 text-[11px] font-semibold transition-colors"
+                    >
+                      Configure Hours
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingEmployee(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-md transition-colors"
+                >
+                  Save Employee Details
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

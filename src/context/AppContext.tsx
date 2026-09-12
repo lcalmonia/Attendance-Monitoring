@@ -103,12 +103,15 @@ interface AppContextType {
   // Incentives
   addIncentiveProgram: (program: Omit<IncentiveProgram, 'id'>) => void;
   updateIncentiveProgram: (id: string, updates: Partial<IncentiveProgram>) => void;
+  deleteIncentiveProgram: (id: string) => void;
   toggleIncentiveStatus: (id: string) => void;
 
   // Deductions
   addDeductionType: (type: Omit<DeductionType, 'id'>) => void;
   updateDeductionType: (id: string, updates: Partial<DeductionType>) => void;
+  deleteDeductionType: (id: string) => void;
   assignEmployeeDeduction: (ded: Omit<EmployeeDeduction, 'id'>) => void;
+  updateEmployeeDeduction: (id: string, updates: Partial<EmployeeDeduction>) => void;
   removeEmployeeDeduction: (id: string) => void;
 
   // Payroll workflow
@@ -393,6 +396,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               role: updates.role ?? u.role,
               businessId: updates.businessId ?? u.businessId,
               status: updates.accountStatus ?? u.status,
+              employeeId: updates.employeeId ?? u.employeeId,
             }
           : u
       )
@@ -833,6 +837,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit('Update Incentive Program', 'incentive', current.name, updates.name || current.name, `Amount: ₱${updates.amount ?? current.amount}`);
   };
 
+  const deleteIncentiveProgram = (id: string) => {
+    const current = incentivePrograms.find((p) => p.id === id);
+    if (!current) return;
+    setIncentivePrograms((prev) => prev.filter((p) => p.id !== id));
+    logAudit('Delete Incentive Program', 'incentive', current.name, 'Deleted');
+  };
+
   const toggleIncentiveStatus = (id: string) => {
     const current = incentivePrograms.find((p) => p.id === id);
     if (!current) return;
@@ -860,6 +871,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit('Update Deduction Type', 'deduction', current.name, updates.name || current.name);
   };
 
+  const deleteDeductionType = (id: string) => {
+    const current = deductionTypes.find((d) => d.id === id);
+    if (!current) return;
+    setDeductionTypes((prev) => prev.filter((d) => d.id !== id));
+    logAudit('Delete Deduction Type', 'deduction', current.name, 'Deleted');
+  };
+
   const assignEmployeeDeduction = (ded: Omit<EmployeeDeduction, 'id'>) => {
     const newDed: EmployeeDeduction = {
       id: `ed_${Date.now()}`,
@@ -868,6 +886,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmployeeDeductions((prev) => [...prev, newDed]);
     const emp = employees.find((e) => e.id === ded.employeeId);
     logAudit('Assign Employee Deduction', 'deduction', 'None', `${ded.deductionName} (₱${ded.amount})`, `Assigned to ${emp?.fullName}`);
+  };
+
+  const updateEmployeeDeduction = (id: string, updates: Partial<EmployeeDeduction>) => {
+    const current = employeeDeductions.find((d) => d.id === id);
+    if (!current) return;
+    setEmployeeDeductions((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)));
+    logAudit('Update Employee Deduction', 'deduction', current.deductionName, `Amount: ₱${updates.amount ?? current.amount}`);
   };
 
   const removeEmployeeDeduction = (id: string) => {
@@ -1117,10 +1142,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteHoliday,
         addIncentiveProgram,
         updateIncentiveProgram,
+        deleteIncentiveProgram,
         toggleIncentiveStatus,
         addDeductionType,
         updateDeductionType,
+        deleteDeductionType,
         assignEmployeeDeduction,
+        updateEmployeeDeduction,
         removeEmployeeDeduction,
         updatePayrollStatus,
         adjustPayrollRecord,

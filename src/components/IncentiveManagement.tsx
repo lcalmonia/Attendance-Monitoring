@@ -10,6 +10,9 @@ import {
   X,
   ShieldCheck,
   Building,
+  Edit2,
+  Trash2,
+  Power,
 } from 'lucide-react';
 import { IncentiveProgram } from '../types';
 import { evaluateIncentiveQualification } from '../services/payrollEngine';
@@ -22,10 +25,14 @@ export const IncentiveManagement: React.FC = () => {
     attendanceRecords,
     payrollPeriods,
     addIncentiveProgram,
+    updateIncentiveProgram,
+    deleteIncentiveProgram,
+    toggleIncentiveStatus,
     currentUser,
   } = useApp();
 
   const [showModal, setShowModal] = useState(false);
+  const [editingIncentive, setEditingIncentive] = useState<IncentiveProgram | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState(500);
@@ -34,27 +41,73 @@ export const IncentiveManagement: React.FC = () => {
   const [disqualifyOnValidAbsence, setDisqualifyOnValidAbsence] = useState(true);
   const [minPresentDays, setMinPresentDays] = useState(10);
   const [targetBusinessId, setTargetBusinessId] = useState('all');
+  const [status, setStatus] = useState<'active' | 'inactive'>('active');
 
   const activePeriod = payrollPeriods.find((p) => p.status === 'projected') || payrollPeriods[1];
 
+  const handleOpenAdd = () => {
+    setEditingIncentive(null);
+    setName('');
+    setDescription('');
+    setAmount(500);
+    setRequiresNoLate(true);
+    setRequiresNoAbsence(true);
+    setDisqualifyOnValidAbsence(true);
+    setMinPresentDays(10);
+    setTargetBusinessId('all');
+    setStatus('active');
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (prog: IncentiveProgram) => {
+    setEditingIncentive(prog);
+    setName(prog.name);
+    setDescription(prog.description || '');
+    setAmount(prog.amount);
+    setRequiresNoLate(prog.conditions?.requireNoLate ?? true);
+    setRequiresNoAbsence(prog.conditions?.requireNoAbsence ?? true);
+    setDisqualifyOnValidAbsence(prog.conditions?.disqualifyOnValidAbsence ?? true);
+    setMinPresentDays(prog.conditions?.minDaysPresent ?? 10);
+    setTargetBusinessId(prog.applicableBusinessId || 'all');
+    setStatus(prog.status || 'active');
+    setShowModal(true);
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    addIncentiveProgram({
-      name,
-      description,
-      amount,
-      applicableBusinessId: targetBusinessId === 'all' ? undefined : targetBusinessId,
-      type: 'condition_based',
-      conditions: {
-        requireNoLate: requiresNoLate,
-        requireNoAbsence: requiresNoAbsence,
-        disqualifyOnValidAbsence,
-        minDaysPresent: minPresentDays,
-      },
-      effectiveDate: new Date().toISOString().slice(0, 10),
-      status: 'active',
-    });
+    if (editingIncentive) {
+      updateIncentiveProgram(editingIncentive.id, {
+        name,
+        description,
+        amount,
+        applicableBusinessId: targetBusinessId === 'all' ? undefined : targetBusinessId,
+        conditions: {
+          requireNoLate: requiresNoLate,
+          requireNoAbsence: requiresNoAbsence,
+          disqualifyOnValidAbsence,
+          minDaysPresent: minPresentDays,
+        },
+        status,
+      });
+    } else {
+      addIncentiveProgram({
+        name,
+        description,
+        amount,
+        applicableBusinessId: targetBusinessId === 'all' ? undefined : targetBusinessId,
+        type: 'condition_based',
+        conditions: {
+          requireNoLate: requiresNoLate,
+          requireNoAbsence: requiresNoAbsence,
+          disqualifyOnValidAbsence,
+          minDaysPresent: minPresentDays,
+        },
+        effectiveDate: new Date().toISOString().slice(0, 10),
+        status,
+      });
+    }
     setShowModal(false);
+    setEditingIncentive(null);
     setName('');
     setDescription('');
   };
@@ -77,7 +130,7 @@ export const IncentiveManagement: React.FC = () => {
 
         {currentUser.role === 'super_admin' && (
           <button
-            onClick={() => setShowModal(true)}
+            onClick={handleOpenAdd}
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5 self-start md:self-auto"
           >
             <Plus className="w-4 h-4" /> Add Incentive Program
@@ -88,23 +141,23 @@ export const IncentiveManagement: React.FC = () => {
       {/* Program Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {incentivePrograms.map((prog) => {
-          const biz = businesses.find((b) => b.id === prog.targetBusinessId);
+          const biz = businesses.find((b) => b.id === prog.applicableBusinessId);
           return (
             <div
               key={prog.id}
-              className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-white shadow-md space-y-4"
+              className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-white shadow-md space-y-4 hover:border-slate-700 transition-colors"
             >
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                     <Award className="w-6 h-6" />
                   </div>
                   <div>
                     <h3 className="font-bold text-white text-base">{prog.name}</h3>
-                    <p className="text-xs text-slate-400">{prog.description}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{prog.description}</p>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right shrink-0">
                   <span className="text-[10px] text-slate-500 uppercase block">Bonus Amount</span>
                   <span className="text-xl font-mono font-black text-emerald-400">
                     +₱{prog.amount.toFixed(2)}
@@ -120,32 +173,32 @@ export const IncentiveManagement: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      prog.conditions.requireNoLate ? 'bg-amber-400' : 'bg-slate-600'
+                      prog.conditions?.requireNoLate ? 'bg-amber-400' : 'bg-slate-600'
                     }`}
                   />
                   <span>
-                    <strong>Zero Tardiness Policy:</strong> {prog.conditions.requireNoLate ? 'Must have zero (0) late minutes' : 'Lates tolerated'}
+                    <strong>Zero Tardiness Policy:</strong> {prog.conditions?.requireNoLate ? 'Must have zero (0) late minutes' : 'Lates tolerated'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      prog.conditions.requireNoAbsence ? 'bg-rose-400' : 'bg-slate-600'
+                      prog.conditions?.requireNoAbsence ? 'bg-rose-400' : 'bg-slate-600'
                     }`}
                   />
                   <span>
-                    <strong>Zero Absences Policy:</strong> {prog.conditions.requireNoAbsence ? 'No unexcused absences allowed' : 'Absences permitted'}
+                    <strong>Zero Absences Policy:</strong> {prog.conditions?.requireNoAbsence ? 'No unexcused absences allowed' : 'Absences permitted'}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      prog.conditions.disqualifyOnValidAbsence ? 'bg-amber-400' : 'bg-slate-600'
+                      prog.conditions?.disqualifyOnValidAbsence ? 'bg-amber-400' : 'bg-slate-600'
                     }`}
                   />
                   <span>
                     <strong>Authorized Absence Clause:</strong>{' '}
-                    {prog.conditions.disqualifyOnValidAbsence
+                    {prog.conditions?.disqualifyOnValidAbsence
                       ? 'Valid / Authorized leave still disqualifies'
                       : 'Authorized leave excused'}
                   </span>
@@ -153,14 +206,54 @@ export const IncentiveManagement: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-400" />
                   <span>
-                    <strong>Minimum Duty Threshold:</strong> Minimum {prog.conditions.minDaysPresent || 1} days present in period
+                    <strong>Minimum Duty Threshold:</strong> Minimum {prog.conditions?.minDaysPresent ?? 1} days present in period
                   </span>
                 </div>
               </div>
 
-              <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
-                <span>Scope: {biz?.name || 'All CV Group Businesses'}</span>
-                <span className="text-emerald-400 font-semibold capitalize">{prog.status}</span>
+              <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-slate-800/80">
+                <span>Scope: <strong className="text-slate-300">{biz?.name || 'All CV Group Businesses'}</strong></span>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      prog.status === 'active'
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : 'bg-slate-800 text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    {prog.status}
+                  </span>
+
+                  {currentUser.role === 'super_admin' && (
+                    <div className="flex items-center gap-1 ml-2">
+                      <button
+                        onClick={() => handleOpenEdit(prog)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition-colors"
+                        title="Edit Incentive Configuration"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => toggleIncentiveStatus(prog.id)}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          prog.status === 'active'
+                            ? 'text-emerald-400 hover:text-amber-400 hover:bg-slate-800'
+                            : 'text-slate-500 hover:text-emerald-400 hover:bg-slate-800'
+                        }`}
+                        title={prog.status === 'active' ? 'Deactivate Program' : 'Activate Program'}
+                      >
+                        <Power className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => deleteIncentiveProgram(prog.id)}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors"
+                        title="Delete Incentive Program"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -274,17 +367,22 @@ export const IncentiveManagement: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Program Modal */}
+      {/* Add / Edit Program Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Award className="w-5 h-5 text-amber-400" />
-                <h3 className="font-bold text-white text-base">Create Incentive Program</h3>
+                <h3 className="font-bold text-white text-base">
+                  {editingIncentive ? 'Edit Incentive Program' : 'Create Incentive Program'}
+                </h3>
               </div>
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  setShowModal(false);
+                  setEditingIncentive(null);
+                }}
                 className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
               >
                 <X className="w-5 h-5" />
@@ -300,7 +398,7 @@ export const IncentiveManagement: React.FC = () => {
                   placeholder="e.g. Zero Tardiness & Perfect Attendance Reward"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -311,7 +409,7 @@ export const IncentiveManagement: React.FC = () => {
                   placeholder="Granted to staff members who observe prompt punctuality..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
@@ -321,11 +419,11 @@ export const IncentiveManagement: React.FC = () => {
                   <input
                     type="number"
                     step="50"
-                    min="100"
+                    min="50"
                     required
                     value={amount}
                     onChange={(e) => setAmount(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div>
@@ -336,8 +434,37 @@ export const IncentiveManagement: React.FC = () => {
                     required
                     value={minPresentDays}
                     onChange={(e) => setMinPresentDays(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Applicable Scope:</label>
+                  <select
+                    value={targetBusinessId}
+                    onChange={(e) => setTargetBusinessId(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="all">All CV Group Businesses</option>
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Program Status:</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value as 'active' | 'inactive')}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
                 </div>
               </div>
 
@@ -348,7 +475,7 @@ export const IncentiveManagement: React.FC = () => {
                     type="checkbox"
                     checked={requiresNoLate}
                     onChange={(e) => setRequiresNoLate(e.target.checked)}
-                    className="rounded border-slate-700"
+                    className="rounded border-slate-700 text-blue-600 focus:ring-0"
                   />
                   <span>Disqualify if employee has any late minutes (zero tolerance)</span>
                 </label>
@@ -357,7 +484,7 @@ export const IncentiveManagement: React.FC = () => {
                     type="checkbox"
                     checked={requiresNoAbsence}
                     onChange={(e) => setRequiresNoAbsence(e.target.checked)}
-                    className="rounded border-slate-700"
+                    className="rounded border-slate-700 text-blue-600 focus:ring-0"
                   />
                   <span>Disqualify on any absence</span>
                 </label>
@@ -366,7 +493,7 @@ export const IncentiveManagement: React.FC = () => {
                     type="checkbox"
                     checked={disqualifyOnValidAbsence}
                     onChange={(e) => setDisqualifyOnValidAbsence(e.target.checked)}
-                    className="rounded border-slate-700"
+                    className="rounded border-slate-700 text-blue-600 focus:ring-0"
                   />
                   <span>Disqualify even on authorized / valid absence (strict policy)</span>
                 </label>
@@ -375,16 +502,19 @@ export const IncentiveManagement: React.FC = () => {
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingIncentive(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md transition-colors"
                 >
-                  Create Program
+                  {editingIncentive ? 'Save Changes' : 'Create Program'}
                 </button>
               </div>
             </form>
