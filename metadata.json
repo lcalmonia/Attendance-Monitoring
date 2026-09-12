@@ -1,0 +1,6 @@
+{
+  "name": "WorkSphere – CV Group Attendance & Payroll Management System",
+  "description": "Enterprise attendance, schedule, break, overtime, holiday, incentive, deduction, and payroll management system for CV Group of Companies.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
