@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { db, hashPassword, json, normalizeLogin } from "../lib/auth";
+import { db, hashPassword, json, normalizeLogin, normalizeMobile } from "../lib/auth";
 
 export default async (req: Request) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -24,10 +24,11 @@ export default async (req: Request) => {
 
   const userId = `usr_${crypto.randomUUID()}`;
   const loginId = normalizeLogin(employeeId);
+  const mobileLogin = mobileNumber ? normalizeMobile(mobileNumber) : null;
 
   await db.sql`
-    INSERT INTO auth_accounts (user_id, login_id, password_hash, must_change_password, is_active)
-    VALUES (${userId}, ${loginId}, ${hashPassword(password)}, false, true)
+    INSERT INTO auth_accounts (user_id, login_id, mobile_login, password_hash, must_change_password, is_active)
+    VALUES (${userId}, ${loginId}, ${mobileLogin}, ${hashPassword(password)}, false, true)
   `;
 
   const user = {
