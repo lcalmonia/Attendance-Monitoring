@@ -23,7 +23,11 @@ import { calculateEmployeePayroll, calculateScheduleMetrics } from '../services/
 import { PayslipModal } from './PayslipModal';
 import { PayrollRecord } from '../types';
 
-export const EmployeeDashboard: React.FC = () => {
+interface EmployeeDashboardProps {
+  view?: 'dashboard' | 'salary';
+}
+
+export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'dashboard' }) => {
   const {
     currentUser,
     employees,
@@ -68,6 +72,32 @@ export const EmployeeDashboard: React.FC = () => {
     payrollPeriods.find((p) => p.status === 'projected' || p.status === 'for_review') ||
     payrollPeriods[1] ||
     payrollPeriods[0];
+
+  // Work dates the employee is scheduled to report during the active cut-off.
+  const cutoffScheduleDates = (() => {
+    if (!activePeriod || !schedule) return [];
+    const result: Array<{ date: string; dayLabel: string; holidayName?: string }> = [];
+    const cursor = new Date(`${activePeriod.startDate}T00:00:00`);
+    const end = new Date(`${activePeriod.endDate}T00:00:00`);
+
+    while (cursor <= end) {
+      if (schedule.requiredDutyDays.includes(cursor.getDay())) {
+        const date = cursor.toISOString().slice(0, 10);
+        const holiday = holidays.find((item) => item.date === date);
+        result.push({
+          date,
+          dayLabel: cursor.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+          }),
+          holidayName: holiday?.name,
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return result;
+  })();
 
   // Calculate live expected salary for this employee in current period
   const livePayroll = employee && compensation && schedule
@@ -128,6 +158,8 @@ export const EmployeeDashboard: React.FC = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      {view !== 'salary' && (
+        <>
       {/* Employee Welcome & Current Live Clock Card */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-blue-950 border border-slate-700/80 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
@@ -445,6 +477,51 @@ export const EmployeeDashboard: React.FC = () => {
         </div>
       </div>
 
+        </>
+      )}
+
+      {view === 'salary' && (
+        <>
+          <div className="bg-slate-900 border border-blue-500/30 rounded-2xl p-5 text-white shadow-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b border-slate-800">
+              <div>
+                <h2 className="text-lg font-black">My Cut-off Schedule</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  {activePeriod?.name} • {activePeriod?.startDate} to {activePeriod?.endDate}
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-lg px-3 py-2">
+                {cutoffScheduleDates.length} scheduled duty day(s)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+              <div className="lg:col-span-2 grid sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
+                {cutoffScheduleDates.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-4">No duty days are configured for this cut-off.</p>
+                ) : cutoffScheduleDates.map((day) => (
+                  <div key={day.date} className="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-200">{day.dayLabel}</span>
+                      {day.holidayName && <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">{day.holidayName}</span>}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-2 font-mono">
+                      {schedule?.requiredTimeIn} – {schedule?.requiredBreakOut} / {schedule?.requiredBreakIn} – {schedule?.requiredTimeOut}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs space-y-2">
+                <div className="flex justify-between"><span className="text-slate-400">Time In</span><span className="font-mono text-white">{schedule?.requiredTimeIn || '—'}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Break Out</span><span className="font-mono text-white">{schedule?.requiredBreakOut || '—'}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Break In</span><span className="font-mono text-white">{schedule?.requiredBreakIn || '—'}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Time Out</span><span className="font-mono text-white">{schedule?.requiredTimeOut || '—'}</span></div>
+                <div className="pt-2 mt-2 border-t border-slate-800 flex justify-between font-semibold text-emerald-400"><span>Net Working Hours</span><span>{schedule?.netRequiredWorkingHours || 0} hrs/day</span></div>
+              </div>
+            </div>
+          </div>
+
       {/* LIVE EXPECTED SALARY / PAYROLL PROJECTION CARD (Highlighted Requirement) */}
       <div className="bg-slate-900 border-2 border-blue-600/40 rounded-2xl p-6 shadow-xl text-white relative">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
@@ -583,6 +660,9 @@ export const EmployeeDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+        </>
+      )}
 
       {/* SUMMARY STATS & ATTENDANCE RECORD OVERVIEW */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
