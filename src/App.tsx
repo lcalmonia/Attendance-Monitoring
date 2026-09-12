@@ -16,6 +16,7 @@ import { AuditTrail } from './components/AuditTrail';
 import { Settings } from './components/Settings';
 import { ShieldCheck } from 'lucide-react';
 import { LoginScreen } from './components/LoginScreen';
+import { ChangePasswordScreen } from './components/ChangePasswordScreen';
 import { authApi, clearAuthToken } from './services/auth';
 
 const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
@@ -58,7 +59,7 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
 const AuthenticatedApp: React.FC = () => {
   const { users, switchUser, isHydrated } = useApp();
-  const [status, setStatus] = useState<'checking' | 'login' | 'ready'>('checking');
+  const [status, setStatus] = useState<'checking' | 'login' | 'change_password' | 'ready'>('checking');
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -71,7 +72,7 @@ const AuthenticatedApp: React.FC = () => {
           return;
         }
         switchUser(session.userId);
-        setStatus('ready');
+        setStatus(session.mustChangePassword ? 'change_password' : 'ready');
       })
       .catch(() => {
         clearAuthToken();
@@ -79,14 +80,14 @@ const AuthenticatedApp: React.FC = () => {
       });
   }, [users, isHydrated]);
 
-  const handleAuthenticated = (userId: string) => {
+  const handleAuthenticated = (userId: string, mustChangePassword: boolean) => {
     const user = users.find((item) => item.id === userId);
     if (!user) {
       window.location.reload();
       return;
     }
     switchUser(userId);
-    setStatus('ready');
+    setStatus(mustChangePassword ? 'change_password' : 'ready');
   };
 
   const handleLogout = async () => {
@@ -96,6 +97,7 @@ const AuthenticatedApp: React.FC = () => {
 
   if (!isHydrated || status === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
   if (status === 'login') return <LoginScreen onAuthenticated={handleAuthenticated} />;
+  if (status === 'change_password') return <ChangePasswordScreen onComplete={() => setStatus('ready')} />;
   return <MainLayout onLogout={handleLogout} />;
 };
 
