@@ -16,6 +16,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { AttendanceRecord, AttendanceStatus } from '../types';
+import { getScheduleForDay } from '../services/payrollEngine';
 
 export const AttendanceManagement: React.FC = () => {
   const {
@@ -227,7 +228,9 @@ export const AttendanceManagement: React.FC = () => {
                 <th className="py-3.5 px-2">Break Out</th>
                 <th className="py-3.5 px-2">Break In</th>
                 <th className="py-3.5 px-2">Time Out</th>
-                <th className="py-3.5 px-2">Late Mins</th>
+                <th className="py-3.5 px-2">Late</th>
+                <th className="py-3.5 px-2">Under</th>
+                <th className="py-3.5 px-2">Over Break</th>
                 <th className="py-3.5 px-2">Break Dur.</th>
                 <th className="py-3.5 px-2">Work Hrs</th>
                 <th className="py-3.5 px-3">Status</th>
@@ -237,7 +240,7 @@ export const AttendanceManagement: React.FC = () => {
             <tbody className="divide-y divide-slate-800/60 font-medium">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-12 text-center text-slate-500">
+                  <td colSpan={15} className="py-12 text-center text-slate-500">
                     No attendance records match your active filters.
                   </td>
                 </tr>
@@ -246,6 +249,8 @@ export const AttendanceManagement: React.FC = () => {
                   const emp = employees.find((e) => e.id === rec.employeeId);
                   const biz = businesses.find((b) => b.id === rec.businessId);
                   const sched = schedules.find((s) => s.employeeId === rec.employeeId);
+                  const recDay = new Date(`${rec.date}T00:00:00`).getDay();
+                  const daySchedule = sched ? getScheduleForDay(sched, recDay) : undefined;
 
                   return (
                     <tr key={rec.id} className="hover:bg-slate-850 transition-colors">
@@ -272,7 +277,7 @@ export const AttendanceManagement: React.FC = () => {
 
                       {/* Schedule */}
                       <td className="py-3 px-3 whitespace-nowrap text-slate-400 text-[11px] font-mono">
-                        {sched ? `${sched.requiredTimeIn} - ${sched.requiredTimeOut}` : '08:00 - 17:00'}
+                        {daySchedule ? `${daySchedule.requiredTimeIn} - ${daySchedule.requiredTimeOut}` : sched ? `${sched.requiredTimeIn} - ${sched.requiredTimeOut}` : '08:00 - 17:00'}
                       </td>
 
                       {/* Time In */}
@@ -309,6 +314,24 @@ export const AttendanceManagement: React.FC = () => {
                           <span className="text-emerald-400 text-[11px]">0m</span>
                         ) : (
                           <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+
+                      {/* Undertime */}
+                      <td className="py-3 px-2 font-mono">
+                        {(rec.undertimeMinutes || 0) > 0 ? (
+                          <span className="text-rose-400 font-bold">+{rec.undertimeMinutes}m</span>
+                        ) : (
+                          <span className="text-emerald-400 text-[11px]">0m</span>
+                        )}
+                      </td>
+
+                      {/* Excess Break */}
+                      <td className="py-3 px-2 font-mono">
+                        {(rec.overBreakMinutes || 0) > 0 ? (
+                          <span className="text-rose-400 font-bold">+{rec.overBreakMinutes}m</span>
+                        ) : (
+                          <span className="text-emerald-400 text-[11px]">0m</span>
                         )}
                       </td>
 

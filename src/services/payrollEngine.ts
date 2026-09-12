@@ -9,7 +9,8 @@ import {
   EmployeeDeduction,
   PayrollPeriod,
   PayrollRecord,
-  Employee
+  Employee,
+  DailySchedule
 } from '../types';
 
 /**
@@ -34,6 +35,23 @@ export function formatToHHMM(timeStr?: string): string {
     return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
   }
   return timeStr;
+}
+
+/**
+ * Returns the configured schedule for a specific day. Falls back to the legacy
+ * schedule fields so existing employee schedules remain compatible.
+ */
+export function getScheduleForDay(schedule: WorkSchedule, day: number): DailySchedule {
+  const configured = schedule.dailySchedules?.find((item) => item.day === day);
+  if (configured) return configured;
+  return {
+    day,
+    enabled: schedule.requiredDutyDays.includes(day),
+    requiredTimeIn: schedule.requiredTimeIn,
+    requiredBreakOut: schedule.requiredBreakOut,
+    requiredBreakIn: schedule.requiredBreakIn,
+    requiredTimeOut: schedule.requiredTimeOut,
+  };
 }
 
 /**
@@ -271,10 +289,15 @@ export function calculateEmployeePayroll({
   );
   const daysAbsent = absentRecords.length;
 
-  // Lates
+  // Attendance-based deductions. Every minute is deducted at the configured
+  // per-minute rate; no grace period is applied.
   const lateMinutesTotal = periodAttendance.reduce((acc, r) => acc + (r.lateMinutes || 0), 0);
   const lateOccurrences = periodAttendance.filter((r) => (r.lateMinutes || 0) > 0).length;
   const lateDeductions = Number((lateMinutesTotal * compensation.perMinuteRate).toFixed(2));
+  const undertimeMinutesTotal = periodAttendance.reduce((acc, r) => acc + (r.undertimeMinutes || 0), 0);
+  const overBreakMinutesTotal = periodAttendance.reduce((acc, r) => acc + (r.overBreakMinutes || 0), 0);
+  const undertimeDeductions = Number((undertimeMinutesTotal * compensation.perMinuteRate).toFixed(2));
+  const overBreakDeductions = Number((overBreakMinutesTotal * compensation.perMinuteRate).toFixed(2));
 
   // Basic Pay: Daily Rate * Days Present
   const basicPay = Number((daysPresent * compensation.dailyRate).toFixed(2));
@@ -341,6 +364,20 @@ export function calculateEmployeePayroll({
       category: 'attendance',
     });
   }
+  if (undertimeDeductions > 0) {
+    deductionsList.push({
+      name: `Undertime (${undertimeMinutesTotal} mins)`,
+      amount: undertimeDeductions,
+      category: 'attendance',
+    });
+  }
+  if (overBreakDeductions > 0) {
+    deductionsList.push({
+      name: `Excess Break (${overBreakMinutesTotal} mins)`,
+      amount: overBreakDeductions,
+      category: 'attendance',
+    });
+  }
 
   activeDeductions.forEach((d) => {
     let amount = d.amount;
@@ -366,13 +403,13 @@ export function calculateEmployeePayroll({
   });
 
   const absenceDeductions = 0; // Handled by basic pay being daily rate * present days
-  const undertimeDeductions = 0;
 
   const totalDeductions = Number(
     (
       lateDeductions +
       absenceDeductions +
       undertimeDeductions +
+      overBreakDeductions +
       statutoryDeductions +
       loanDeductions +
       cashAdvanceDeductions +

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   Business,
   User,
@@ -36,6 +36,8 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_SYSTEM_SETTINGS,
 } from '../services/initialData';
+import { loadAppState, saveAppState } from '../services/netlifyState';
+import { authApi } from '../services/auth';
 import {
   calculateRates,
   calculateScheduleMetrics,
@@ -43,6 +45,7 @@ import {
   evaluateOvertime,
   calculateEmployeePayroll,
   calculateMinutesBetween,
+  getScheduleForDay,
 } from '../services/payrollEngine';
 
 interface AppContextType {
@@ -64,6 +67,7 @@ interface AppContextType {
   auditLogs: AuditLog[];
   notifications: AppNotification[];
   systemSettings: SystemSettings;
+  isHydrated: boolean;
 
   // Actions
   login: (emailOrEmpId: string) => boolean;
@@ -78,8 +82,10 @@ interface AppContextType {
   // Employee actions
   addEmployee: (emp: Omit<Employee, 'id'>, comp: Omit<Compensation, 'id' | 'createdAt' | 'employeeId'>, sched: Omit<WorkSchedule, 'id' | 'employeeId'>) => void;
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
+  completeEmployeeOnboarding: (id: string, email: string, mobileNumber: string) => Promise<void>;
   toggleAccountStatus: (userId: string) => void;
   resetPassword: (userId: string) => void;
+  deleteEmployee: (userId: string) => void;
 
   // Compensation actions
   updateCompensation: (comp: Omit<Compensation, 'id' | 'createdAt'> & { id?: string }, reason?: string) => void;
@@ -209,6 +215,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return found || users[0] || INITIAL_USERS[0];
   });
 
+  // Hydrate shared state from Netlify Database. Local state remains available as a fallback while the API is loading.
+  const [isHydrated, setIsHydrated] = useState(false);
+  const remoteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadAppState()
+      .then((remote) => {
+        if (cancelled || !remote || Object.keys(remote).length === 0) return;
+
+        if (Array.isArray(remote.businesses)) setBusinesses(remote.businesses as Business[]);
+        if (Array.isArray(remote.users)) setUsers(remote.users as User[]);
+        if (Array.isArray(remote.employees)) setEmployees(remote.employees as Employee[]);
+        if (Array.isArray(remote.compensations)) setCompensations(remote.compensations as Compensation[]);
+        if (Array.isArray(remote.schedules)) setSchedules(remote.schedules as WorkSchedule[]);
+        if (Array.isArray(remote.attendanceRecords)) setAttendanceRecords(remote.attendanceRecords as AttendanceRecord[]);
+        if (Array.isArray(remote.overtimeRecords)) setOvertimeRecords(remote.overtimeRecords as OvertimeRecord[]);
+        if (Array.isArray(remote.holidays)) setHolidays(remote.holidays as Holiday[]);
+        if (Array.isArray(remote.incentivePrograms)) setIncentivePrograms(remote.incentivePrograms as IncentiveProgram[]);
+        if (Array.isArray(remote.deductionTypes)) setDeductionTypes(remote.deductionTypes as DeductionType[]);
+        if (Array.isArray(remote.employeeDeductions)) setEmployeeDeductions(remote.employeeDeductions as EmployeeDeduction[]);
+        if (Array.isArray(remote.payrollPeriods)) setPayrollPeriods(remote.payrollPeriods as PayrollPeriod[]);
+        if (Array.isArray(remote.payrollRecords)) setPayrollRecords(remote.payrollRecords as PayrollRecord[]);
+        if (Array.isArray(remote.auditLogs)) setAuditLogs(remote.auditLogs as AuditLog[]);
+        if (Array.isArray(remote.notifications)) setNotifications(remote.notifications as AppNotification[]);
+        if (remote.systemSettings && typeof remote.systemSettings === 'object') setSystemSettings(remote.systemSettings as SystemSettings);
+      })
+      .catch((error) => {
+        console.warn('Netlify shared state is unavailable; using local fallback until the next successful save.', error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsHydrated(true);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
+
+    remoteSaveTimer.current = setTimeout(() => {
+      saveAppState({
+        businesses,
+        users,
+        employees,
+        compensations,
+        schedules,
+        attendanceRecords,
+        overtimeRecords,
+        holidays,
+        incentivePrograms,
+        deductionTypes,
+        employeeDeductions,
+        payrollPeriods,
+        payrollRecords,
+        auditLogs,
+        notifications,
+        systemSettings,
+      }).catch((error) => console.error('Failed to save shared application state', error));
+    }, 500);
+
+    return () => {
+      if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
+    };
+  }, [
+    isHydrated, businesses, users, employees, compensations, schedules,
+    attendanceRecords, overtimeRecords, holidays, incentivePrograms,
+    deductionTypes, employeeDeductions, payrollPeriods, payrollRecords,
+    auditLogs, notifications, systemSettings, currentUser.id,
+  ]);
+
   // Sync state to localStorage on change
   useEffect(() => saveStorage('businesses', businesses), [businesses]);
   useEffect(() => saveStorage('users', users), [users]);
@@ -226,7 +305,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveStorage('audit_logs', auditLogs), [auditLogs]);
   useEffect(() => saveStorage('notifications', notifications), [notifications]);
   useEffect(() => saveStorage('settings', systemSettings), [systemSettings]);
-  useEffect(() => saveStorage('current_user_id', currentUser.id), [currentUser]);
 
   // Helper to log audit
   const logAudit = (
@@ -367,6 +445,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requiredBreakOut: schedData.requiredBreakOut,
       requiredBreakIn: schedData.requiredBreakIn,
       requiredTimeOut: schedData.requiredTimeOut,
+      dailySchedules: schedData.dailySchedules,
       totalDutyDurationHours: metrics.totalDutyDurationHours,
       requiredBreakDurationHours: metrics.requiredBreakDurationHours,
       netRequiredWorkingHours: metrics.netRequiredWorkingHours,
@@ -378,6 +457,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCompensations((prev) => [...prev, newComp]);
     setSchedules((prev) => [...prev, newSched]);
 
+    authApi.provision(newId, newEmployee.employeeId, newEmployee.employeeId, newEmployee.mobileNumber)
+      .catch((error) => console.error('Employee account provisioning failed', error));
+
     logAudit('Add Employee', 'employee', 'None', `${newEmployee.fullName} (${newEmployee.employeeId})`, `Position: ${newEmployee.position}`);
   };
 
@@ -385,6 +467,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const current = employees.find((e) => e.id === id);
     if (!current) return;
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)));
+    if (updates.employeeId !== undefined || updates.mobileNumber !== undefined) {
+      authApi.syncLogin(
+        id,
+        updates.employeeId ?? current.employeeId,
+        updates.mobileNumber ?? current.mobileNumber
+      ).catch((error) => console.error('Employee login identifier sync failed', error));
+    }
     setUsers((prev) =>
       prev.map((u) =>
         u.id === id
@@ -404,6 +493,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     logAudit('Update Employee', 'employee', current.fullName, updates.fullName || current.fullName, `Updated record for ${current.employeeId}`);
   };
 
+  const completeEmployeeOnboarding = async (
+    id: string,
+    email: string,
+    mobileNumber: string
+  ) => {
+    const current = employees.find((employee) => employee.id === id);
+    if (!current) throw new Error('Employee account was not found.');
+
+    const normalizedEmail = email.trim();
+    const normalizedMobile = mobileNumber.trim();
+    const nextEmployees = employees.map((employee) =>
+      employee.id === id
+        ? { ...employee, email: normalizedEmail, mobileNumber: normalizedMobile }
+        : employee
+    );
+    const nextUsers = users.map((user) =>
+      user.id === id
+        ? { ...user, email: normalizedEmail, mobileNumber: normalizedMobile }
+        : user
+    );
+
+    // Update local state immediately and persist the same data to the shared
+    // Netlify state so Super Admin sees the employee-provided contact details.
+    setEmployees(nextEmployees);
+    setUsers(nextUsers);
+    if (currentUser.id === id) {
+      setCurrentUser((user) => ({
+        ...user,
+        email: normalizedEmail,
+        mobileNumber: normalizedMobile,
+      }));
+    }
+
+    await authApi.syncLogin(id, current.employeeId, normalizedMobile);
+    await saveAppState({
+      businesses,
+      users: nextUsers,
+      employees: nextEmployees,
+      compensations,
+      schedules,
+      attendanceRecords,
+      overtimeRecords,
+      holidays,
+      incentivePrograms,
+      deductionTypes,
+      employeeDeductions,
+      payrollPeriods,
+      payrollRecords,
+      auditLogs,
+      notifications,
+      systemSettings,
+    });
+  };
+
   const toggleAccountStatus = (userId: string) => {
     const current = employees.find((e) => e.id === userId);
     if (!current) return;
@@ -414,13 +557,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const resetPassword = (userId: string) => {
     const current = employees.find((e) => e.id === userId);
     if (!current) return;
-    logAudit('Reset Password', 'employee', 'Old Password', 'Temporary Password Generated', `User: ${current.fullName}`);
-    pushNotification({
-      targetUserId: userId,
-      title: 'Password Reset',
-      message: 'Your account password was reset by Super Admin to the default (emp123).',
-      type: 'info',
-    });
+    authApi.provision(userId, current.employeeId, current.employeeId, current.mobileNumber)
+      .then(() => {
+        logAudit('Reset Password', 'employee', 'Old Password', 'Temporary password reset', `User: ${current.fullName}`);
+        pushNotification({
+          targetUserId: userId,
+          title: 'Password Reset',
+          message: 'Your password was reset to your Employee ID. You must change it after signing in.',
+          type: 'info',
+        });
+      })
+      .catch((error) => console.error('Password reset failed', error));
+  };
+
+  const deleteEmployee = (userId: string) => {
+    if (userId === currentUser.id) {
+      console.warn('The currently signed-in account cannot be deleted.');
+      return;
+    }
+    const current = employees.find((e) => e.id === userId);
+    if (!current) return;
+
+    authApi.deleteAccount(userId)
+      .catch((error) => console.error('Employee authentication account deletion failed', error));
+
+    setEmployees((prev) => prev.filter((e) => e.id !== userId));
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setCompensations((prev) => prev.filter((c) => c.employeeId !== userId));
+    setSchedules((prev) => prev.filter((s) => s.employeeId !== userId));
+    setAttendanceRecords((prev) => prev.filter((record) => record.employeeId !== userId));
+    setOvertimeRecords((prev) => prev.filter((record) => record.employeeId !== userId));
+    setEmployeeDeductions((prev) => prev.filter((deduction) => deduction.employeeId !== userId));
+    setPayrollRecords((prev) => prev.filter((record) => record.employeeId !== userId));
+    setNotifications((prev) => prev.filter((notification) => notification.targetUserId !== userId));
+
+    logAudit('Delete Employee', 'employee', current.fullName, 'Deleted', `Employee ID: ${current.employeeId}`);
   };
 
   // Compensation Update (Preserves history!)
@@ -482,6 +653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requiredBreakOut: schedData.requiredBreakOut,
       requiredBreakIn: schedData.requiredBreakIn,
       requiredTimeOut: schedData.requiredTimeOut,
+      dailySchedules: schedData.dailySchedules,
       totalDutyDurationHours: metrics.totalDutyDurationHours,
       requiredBreakDurationHours: metrics.requiredBreakDurationHours,
       netRequiredWorkingHours: metrics.netRequiredWorkingHours,
@@ -512,9 +684,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const sched = schedules.find((s) => s.employeeId === employeeId);
 
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     const timeHHMM = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const daySchedule = sched ? getScheduleForDay(sched, now.getDay()) : undefined;
+    if (daySchedule && !daySchedule.enabled) {
+      return { success: false, message: 'You are not scheduled for duty today.' };
+    }
 
     // Find existing record for today
     let existing = attendanceRecords.find(
@@ -530,7 +706,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // STRICT NO-GRACE-PERIOD LATE CALCULATION
-      const reqTimeIn = sched?.requiredTimeIn || '08:00';
+      const reqTimeIn = daySchedule?.requiredTimeIn || sched?.requiredTimeIn || '08:00';
       const perMinRate = comp?.perMinuteRate || 1.25;
       const lateResult = computeLate(timeHHMM, reqTimeIn, perMinRate);
 
@@ -543,8 +719,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lateMinutes: lateResult.lateMinutes,
         lateOccurrences: lateResult.lateOccurrences,
         lateDeductions: lateResult.lateDeduction,
-        requiredBreakMinutes: sched ? sched.requiredBreakDurationHours * 60 : 60,
+        requiredBreakMinutes: daySchedule
+          ? calculateMinutesBetween(daySchedule.requiredBreakOut, daySchedule.requiredBreakIn)
+          : sched
+          ? sched.requiredBreakDurationHours * 60
+          : 60,
         actualBreakMinutes: 0,
+        undertimeMinutes: 0,
+        undertimeDeductions: 0,
+        overBreakMinutes: 0,
+        overBreakDeductions: 0,
         totalWorkHours: 0,
         status: 'present',
         isHoliday: !!holidayToday,
@@ -600,16 +784,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timeHHMM
       );
 
+      const overBreakMinutes = Math.max(0, breakMins - existing.requiredBreakMinutes);
+      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
       setAttendanceRecords((prev) =>
         prev.map((r) =>
           r.id === existing!.id
-            ? { ...r, breakIn: timeStr, actualBreakMinutes: breakMins }
+            ? { ...r, breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions }
             : r
         )
       );
       return {
         success: true,
-        message: `Break In recorded at ${timeStr} (Actual break: ${breakMins} mins / Req: ${existing.requiredBreakMinutes} mins).`,
+        message: `Break In recorded at ${timeStr} (Actual break: ${breakMins} mins / Req: ${existing.requiredBreakMinutes} mins)${overBreakMinutes > 0 ? `; excess break: ${overBreakMinutes} mins (₱${overBreakDeductions.toFixed(2)} deduction)` : ''}.`,
       };
     }
 
@@ -618,12 +804,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'Time Out has already been recorded for today.' };
       }
 
-      const totalShiftMinutes = calculateMinutesBetween(
-        existing.timeIn.slice(0, 5),
-        timeHHMM
-      );
-      const totalWorkMins = Math.max(0, totalShiftMinutes - (existing.actualBreakMinutes || 0));
+      // Only time worked within the required schedule window is counted as regular work.
+      // Early arrival and approved/pending overtime outside the schedule are not included here.
+      const requiredIn = daySchedule?.requiredTimeIn || sched?.requiredTimeIn || '08:00';
+      const requiredOut = daySchedule?.requiredTimeOut || sched?.requiredTimeOut || '17:00';
+      const actualIn = existing.timeIn.slice(0, 5);
+      const actualOut = timeHHMM;
+      const toMinutes = (value: string) => {
+        const [h, m] = value.split(':').map(Number);
+        return h * 60 + m;
+      };
+      const requiredInMin = toMinutes(requiredIn);
+      const requiredOutMin = toMinutes(requiredOut);
+      const actualInMin = toMinutes(actualIn);
+      const actualOutMin = toMinutes(actualOut);
+      const countedStart = Math.max(actualInMin, requiredInMin);
+      const countedEnd = Math.min(actualOutMin, requiredOutMin);
+      const scheduledWindowMinutes = Math.max(0, countedEnd - countedStart);
+      const actualBreakMinutes = existing.breakOut
+        ? existing.breakIn
+          ? existing.actualBreakMinutes || calculateMinutesBetween(existing.breakOut.slice(0, 5), existing.breakIn.slice(0, 5))
+          : calculateMinutesBetween(existing.breakOut.slice(0, 5), actualOut)
+        : 0;
+      const overBreakMinutes = Math.max(0, actualBreakMinutes - existing.requiredBreakMinutes);
+      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
+      const totalWorkMins = Math.max(0, scheduledWindowMinutes - actualBreakMinutes);
       const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
+      const undertimeMinutes = Math.max(0, requiredOutMin - actualOutMin);
+      const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
 
       // Calculate Holiday Duty Pay if holiday
       let holidayDutyPay = 0;
@@ -640,7 +848,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ? {
                 ...r,
                 timeOut: timeStr,
+                actualBreakMinutes,
+                overBreakMinutes,
+                overBreakDeductions,
                 totalWorkHours,
+                undertimeMinutes,
+                undertimeDeductions,
                 holidayDutyPay,
               }
             : r
@@ -650,7 +863,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // AUTOMATIC OVERTIME DETECTION:
       // Compare Actual Time Out with Required Time Out.
       // Minimum overtime requirement check (default 60m).
-      const reqTimeOut = sched?.requiredTimeOut || '17:00';
+      const reqTimeOut = daySchedule?.requiredTimeOut || sched?.requiredTimeOut || '17:00';
       const otEval = evaluateOvertime(
         timeHHMM,
         reqTimeOut,
@@ -695,7 +908,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return {
         success: true,
-        message: `Time Out recorded at ${timeStr} (${totalWorkHours} hrs worked). ${
+        message: `Time Out recorded at ${timeStr} (${totalWorkHours} regular hrs counted)${undertimeMinutes > 0 ? `, ${undertimeMinutes} mins undertime (₱${undertimeDeductions.toFixed(2)} deduction)` : ''}. ${
           otEval.isEligible
             ? `Potential overtime of ${otEval.potentialOvertimeMinutes} mins detected and sent for Super Admin approval.`
             : 'Shift completed.'
@@ -1121,6 +1334,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         auditLogs,
         notifications,
         systemSettings,
+        isHydrated,
         login,
         switchUser,
         logout,
@@ -1129,8 +1343,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleBusinessStatus,
         addEmployee,
         updateEmployee,
+        completeEmployeeOnboarding,
         toggleAccountStatus,
         resetPassword,
+        deleteEmployee,
         updateCompensation,
         updateSchedule,
         recordAttendance,

@@ -110,17 +110,27 @@ export interface Compensation {
   updatedBy?: string;
 }
 
+export interface DailySchedule {
+  day: number; // 0=Sun, 1=Mon ... 6=Sat
+  enabled: boolean;
+  requiredTimeIn: string;
+  requiredBreakOut: string;
+  requiredBreakIn: string;
+  requiredTimeOut: string;
+}
+
 export interface WorkSchedule {
   id: string;
   employeeId: string;
-  requiredDutyDays: number[]; // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-  requiredTimeIn: string; // "08:00"
-  requiredBreakOut: string; // "12:00"
-  requiredBreakIn: string; // "13:00"
-  requiredTimeOut: string; // "17:00"
-  totalDutyDurationHours: number; // e.g. 9 hours
-  requiredBreakDurationHours: number; // e.g. 1 hour
-  netRequiredWorkingHours: number; // Duty - Break = e.g. 8 hours
+  requiredDutyDays: number[]; // Legacy/fallback list of enabled days
+  requiredTimeIn: string; // Legacy/fallback
+  requiredBreakOut: string;
+  requiredBreakIn: string;
+  requiredTimeOut: string;
+  dailySchedules?: DailySchedule[]; // Per-day schedule; supports different opening/closing shifts
+  totalDutyDurationHours: number; // Aggregate/default preview
+  requiredBreakDurationHours: number;
+  netRequiredWorkingHours: number;
   exceedsEightHoursWarning: boolean;
 }
 
@@ -136,6 +146,10 @@ export interface AttendanceRecord {
   lateMinutes: number;
   lateOccurrences: number;
   lateDeductions: number;
+  undertimeMinutes?: number;
+  undertimeDeductions?: number;
+  overBreakMinutes?: number;
+  overBreakDeductions?: number;
   requiredBreakMinutes: number;
   actualBreakMinutes: number;
   totalWorkHours: number;

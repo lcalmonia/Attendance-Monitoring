@@ -34,10 +34,9 @@ export const PayrollManagement: React.FC = () => {
     holidays,
     incentivePrograms,
     employeeDeductions,
-    finalizedPayrollRecords,
-    finalizePayroll,
-    updatePayrollPeriodStatus,
-    adjustFinalizedPayroll,
+    payrollRecords,
+    updatePayrollStatus,
+    adjustPayrollRecord,
     currentUser,
   } = useApp();
 
@@ -75,7 +74,7 @@ export const PayrollManagement: React.FC = () => {
     })
     .map((emp) => {
       // If finalized snapshot exists for this period and employee, use historical locked snapshot
-      const existingSnap = finalizedPayrollRecords.find(
+      const existingSnap = payrollRecords.find(
         (r) => r.periodId === currentPeriod.id && r.employeeId === emp.id
       );
 
@@ -112,18 +111,18 @@ export const PayrollManagement: React.FC = () => {
   // Finalize Action
   const handleFinalize = () => {
     if (window.confirm(`Are you sure you want to finalize and LOCK payroll for ${currentPeriod.name}? All calculations, rates, and records will be frozen.`)) {
-      finalizePayroll(currentPeriod.id, payrollList);
+      updatePayrollStatus(currentPeriod.id, 'finalized', 'Finalized and locked by Super Admin');
     }
   };
 
   // Mark as Paid Action
   const handleMarkAsPaid = () => {
-    updatePayrollPeriodStatus(currentPeriod.id, 'paid');
+    updatePayrollStatus(currentPeriod.id, 'paid', 'Marked as paid by Super Admin');
   };
 
   // Move to For Review
   const handleMarkForReview = () => {
-    updatePayrollPeriodStatus(currentPeriod.id, 'for_review');
+    updatePayrollStatus(currentPeriod.id, 'for_review', 'Submitted for payroll review');
   };
 
   // Post finalization save
@@ -135,14 +134,15 @@ export const PayrollManagement: React.FC = () => {
       return;
     }
 
-    adjustFinalizedPayroll(
-      adjustingRecord.id,
-      {
-        netSalary: adjNetSalary,
-        notes: `Post-finalization adjustment: ${adjReason}`,
-      },
-      adjReason
-    );
+    const delta = Math.abs(adjNetSalary - adjustingRecord.netSalary);
+    if (delta > 0) {
+      adjustPayrollRecord(
+        adjustingRecord.id,
+        delta,
+        adjNetSalary >= adjustingRecord.netSalary ? 'earning' : 'deduction',
+        adjReason
+      );
+    }
 
     setAdjustingRecord(null);
     setAdjReason('');

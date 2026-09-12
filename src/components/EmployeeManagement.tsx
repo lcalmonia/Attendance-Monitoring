@@ -16,13 +16,15 @@ import {
   Search,
   Check,
   ShieldAlert,
+  Trash2,
 } from 'lucide-react';
-import { Employee, Compensation, WorkSchedule, EmploymentStatus, AccountStatus, UserRole } from '../types';
+import { Employee, Compensation, WorkSchedule, EmploymentStatus, AccountStatus, UserRole, DailySchedule } from '../types';
 import { calculateRates, calculateScheduleMetrics } from '../services/payrollEngine';
 
 export const EmployeeManagement: React.FC = () => {
   const {
     employees,
+    users,
     businesses,
     compensations,
     schedules,
@@ -32,6 +34,7 @@ export const EmployeeManagement: React.FC = () => {
     updateEmployee,
     toggleAccountStatus,
     resetPassword,
+    deleteEmployee,
     updateCompensation,
     updateSchedule,
     assignEmployeeDeduction,
@@ -97,6 +100,7 @@ export const EmployeeManagement: React.FC = () => {
   const [editBreakOut, setEditBreakOut] = useState('12:00');
   const [editBreakIn, setEditBreakIn] = useState('13:00');
   const [editTimeOut, setEditTimeOut] = useState('17:00');
+  const [editDailySchedules, setEditDailySchedules] = useState<DailySchedule[]>([]);
   const [schedReason, setSchedReason] = useState('');
 
   // Edit Employee Details Form State
@@ -114,12 +118,16 @@ export const EmployeeManagement: React.FC = () => {
   });
 
   const handleOpenEditEmployee = (emp: Employee) => {
+    // Contact details are entered by the employee during initial account setup.
+    // Prefer the linked user record as the source of truth, with the employee
+    // record as a fallback for older records.
+    const linkedUser = users.find((user) => user.id === emp.id);
     setEditingEmployee(emp);
     setEditEmpData({
       employeeId: emp.employeeId,
       fullName: emp.fullName,
-      email: emp.email,
-      mobileNumber: emp.mobileNumber,
+      email: linkedUser?.email || emp.email || '',
+      mobileNumber: linkedUser?.mobileNumber || emp.mobileNumber || '',
       businessId: emp.businessId,
       position: emp.position,
       employmentStatus: emp.employmentStatus,
@@ -191,11 +199,27 @@ export const EmployeeManagement: React.FC = () => {
   const openSchedModal = (emp: Employee) => {
     const sched = schedules.find((s) => s.employeeId === emp.id);
     setManagingSchedEmp(emp);
-    setEditDutyDays(sched?.requiredDutyDays || [1, 2, 3, 4, 5, 6]);
-    setEditTimeIn(sched?.requiredTimeIn || '08:00');
-    setEditBreakOut(sched?.requiredBreakOut || '12:00');
-    setEditBreakIn(sched?.requiredBreakIn || '13:00');
-    setEditTimeOut(sched?.requiredTimeOut || '17:00');
+    const fallbackDays = sched?.requiredDutyDays || [1, 2, 3, 4, 5, 6];
+    const fallback = {
+      requiredTimeIn: sched?.requiredTimeIn || '08:00',
+      requiredBreakOut: sched?.requiredBreakOut || '12:00',
+      requiredBreakIn: sched?.requiredBreakIn || '13:00',
+      requiredTimeOut: sched?.requiredTimeOut || '17:00',
+    };
+    const normalizedDaily = [1, 2, 3, 4, 5, 6, 0].map((day) =>
+      sched?.dailySchedules?.find((item) => item.day === day) || {
+        day,
+        enabled: fallbackDays.includes(day),
+        ...fallback,
+      }
+    );
+    setEditDailySchedules(normalizedDaily);
+    const firstEnabled = normalizedDaily.find((item) => item.enabled) || normalizedDaily[0];
+    setEditDutyDays(normalizedDaily.filter((item) => item.enabled).map((item) => item.day));
+    setEditTimeIn(firstEnabled.requiredTimeIn);
+    setEditBreakOut(firstEnabled.requiredBreakOut);
+    setEditBreakIn(firstEnabled.requiredBreakIn);
+    setEditTimeOut(firstEnabled.requiredTimeOut);
     setSchedReason('');
   };
 
@@ -227,18 +251,35 @@ export const EmployeeManagement: React.FC = () => {
     e.preventDefault();
     if (!managingSchedEmp) return;
 
+    const enabledDays = editDailySchedules.filter((item) => item.enabled);
+    if (enabledDays.length === 0) {
+      alert('Please enable at least one required duty day.');
+      return;
+    }
+    const primary = enabledDays[0];
+    const primaryMetrics = calculateScheduleMetrics(
+      primary.requiredTimeIn,
+      primary.requiredBreakOut,
+      primary.requiredBreakIn,
+      primary.requiredTimeOut
+    );
+    const anyOverEight = enabledDays.some((item) =>
+      calculateScheduleMetrics(item.requiredTimeIn, item.requiredBreakOut, item.requiredBreakIn, item.requiredTimeOut).exceedsEightHoursWarning
+    );
+
     updateSchedule(
       {
         employeeId: managingSchedEmp.id,
-        requiredDutyDays: editDutyDays,
-        requiredTimeIn: editTimeIn,
-        requiredBreakOut: editBreakOut,
-        requiredBreakIn: editBreakIn,
-        requiredTimeOut: editTimeOut,
-        totalDutyDurationHours: liveSchedMetrics.totalDutyDurationHours,
-        requiredBreakDurationHours: liveSchedMetrics.requiredBreakDurationHours,
-        netRequiredWorkingHours: liveSchedMetrics.netRequiredWorkingHours,
-        exceedsEightHoursWarning: liveSchedMetrics.exceedsEightHoursWarning,
+        requiredDutyDays: enabledDays.map((item) => item.day),
+        requiredTimeIn: primary.requiredTimeIn,
+        requiredBreakOut: primary.requiredBreakOut,
+        requiredBreakIn: primary.requiredBreakIn,
+        requiredTimeOut: primary.requiredTimeOut,
+        dailySchedules: editDailySchedules,
+        totalDutyDurationHours: primaryMetrics.totalDutyDurationHours,
+        requiredBreakDurationHours: primaryMetrics.requiredBreakDurationHours,
+        netRequiredWorkingHours: primaryMetrics.netRequiredWorkingHours,
+        exceedsEightHoursWarning: anyOverEight,
       },
       schedReason
     );
@@ -485,6 +526,23 @@ export const EmployeeManagement: React.FC = () => {
                             <KeyRound className="w-3.5 h-3.5" />
                           </button>
 
+                          {/* Delete Employee */}
+                          <button
+                            onClick={() => {
+                              if (emp.id === currentUser.id) {
+                                alert('You cannot delete the account currently signed in.');
+                                return;
+                              }
+                              if (window.confirm(`Delete ${emp.fullName} and permanently remove the employee record, compensation, schedule, attendance, overtime, deductions, payroll records, and login account?`)) {
+                                deleteEmployee(emp.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30"
+                            title="Delete Employee Permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+
                           {/* Toggle Active/Inactive */}
                           <button
                             onClick={() => toggleAccountStatus(emp.id)}
@@ -715,87 +773,85 @@ export const EmployeeManagement: React.FC = () => {
                 </div>
               </div>
 
-              {/* Duty Days Selector */}
-              <div>
-                <label className="block text-slate-400 mb-1.5 font-semibold">Required Duty Days:</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { day: 1, label: 'Mon' },
-                    { day: 2, label: 'Tue' },
-                    { day: 3, label: 'Wed' },
-                    { day: 4, label: 'Thu' },
-                    { day: 5, label: 'Fri' },
-                    { day: 6, label: 'Sat' },
-                    { day: 0, label: 'Sun' },
-                  ].map((d) => {
-                    const dutyDaysArr = editDutyDays || [];
-                    const isSelected = dutyDaysArr.includes(d.day);
-                    return (
-                      <button
-                        type="button"
-                        key={d.day}
-                        onClick={() => {
-                          if (isSelected) {
-                            setEditDutyDays(dutyDaysArr.filter((x) => x !== d.day));
-                          } else {
-                            setEditDutyDays([...dutyDaysArr, d.day]);
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors ${
-                          isSelected
-                            ? 'bg-blue-600 text-white shadow-sm'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                        }`}
-                      >
-                        {d.label}
-                      </button>
+              {/* Per-Day Schedule Configuration */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-slate-300 mb-1 font-bold">Weekly Schedule by Day</label>
+                  <p className="text-[11px] text-slate-500">
+                    Each day can have its own opening/closing shift and break schedule.
+                  </p>
+                </div>
+                {[
+                  { day: 1, label: 'Monday' },
+                  { day: 2, label: 'Tuesday' },
+                  { day: 3, label: 'Wednesday' },
+                  { day: 4, label: 'Thursday' },
+                  { day: 5, label: 'Friday' },
+                  { day: 6, label: 'Saturday' },
+                  { day: 0, label: 'Sunday' },
+                ].map((dayInfo) => {
+                  const daySchedule = editDailySchedules.find((item) => item.day === dayInfo.day) || {
+                    day: dayInfo.day,
+                    enabled: false,
+                    requiredTimeIn: '08:00',
+                    requiredBreakOut: '12:00',
+                    requiredBreakIn: '13:00',
+                    requiredTimeOut: '17:00',
+                  };
+                  const metrics = calculateScheduleMetrics(
+                    daySchedule.requiredTimeIn,
+                    daySchedule.requiredBreakOut,
+                    daySchedule.requiredBreakIn,
+                    daySchedule.requiredTimeOut
+                  );
+                  const updateDay = (updates: Partial<DailySchedule>) => {
+                    setEditDailySchedules((prev) =>
+                      prev.map((item) =>
+                        item.day === dayInfo.day ? { ...item, ...updates } : item
+                      )
                     );
-                  })}
-                </div>
-              </div>
-
-              {/* Time Configuration */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Required Time In:</label>
-                  <input
-                    type="time"
-                    required
-                    value={editTimeIn}
-                    onChange={(e) => setEditTimeIn(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Required Time Out:</label>
-                  <input
-                    type="time"
-                    required
-                    value={editTimeOut}
-                    onChange={(e) => setEditTimeOut(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Required Break Out:</label>
-                  <input
-                    type="time"
-                    required
-                    value={editBreakOut}
-                    onChange={(e) => setEditBreakOut(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Required Break In:</label>
-                  <input
-                    type="time"
-                    required
-                    value={editBreakIn}
-                    onChange={(e) => setEditBreakIn(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
+                  };
+                  return (
+                    <div key={dayInfo.day} className={`rounded-xl border p-3 space-y-2 ${daySchedule.enabled ? 'bg-slate-950 border-slate-700' : 'bg-slate-950/40 border-slate-800'}`}>
+                      <div className="flex items-center justify-between">
+                        <label className="flex items-center gap-2 font-bold text-white cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={daySchedule.enabled}
+                            onChange={(e) => updateDay({ enabled: e.target.checked })}
+                            className="accent-blue-600"
+                          />
+                          {dayInfo.label}
+                        </label>
+                        {daySchedule.enabled && (
+                          <span className={`text-[10px] font-semibold ${metrics.exceedsEightHoursWarning ? 'text-amber-400' : 'text-emerald-400'}`}>
+                            Net: {metrics.netRequiredWorkingHours}h
+                          </span>
+                        )}
+                      </div>
+                      {daySchedule.enabled && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-slate-500 mb-1">Time In</label>
+                            <input type="time" value={daySchedule.requiredTimeIn} onChange={(e) => updateDay({ requiredTimeIn: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-slate-500 mb-1">Time Out</label>
+                            <input type="time" value={daySchedule.requiredTimeOut} onChange={(e) => updateDay({ requiredTimeOut: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-slate-500 mb-1">Break Out</label>
+                            <input type="time" value={daySchedule.requiredBreakOut} onChange={(e) => updateDay({ requiredBreakOut: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-slate-500 mb-1">Break In</label>
+                            <input type="time" value={daySchedule.requiredBreakIn} onChange={(e) => updateDay({ requiredBreakIn: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Schedule Duration & Break Calculation */}
@@ -815,13 +871,13 @@ export const EmployeeManagement: React.FC = () => {
               </div>
 
               {/* 8-HOUR EXCEED WARNING (Mandatory Rule) */}
-              {liveSchedMetrics.exceedsEightHoursWarning && (
+              {editDailySchedules.filter((item) => item.enabled).some((item) => calculateScheduleMetrics(item.requiredTimeIn, item.requiredBreakOut, item.requiredBreakIn, item.requiredTimeOut).exceedsEightHoursWarning) && (
                 <div className="p-3 bg-amber-500/20 border border-amber-500/50 rounded-xl text-amber-200 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <strong className="block text-amber-300">Working Hours Warning</strong>
-                    Net required working hours ({liveSchedMetrics.netRequiredWorkingHours} hrs) exceed the standard 8
-                    hours per day. Super Admin may still save this configuration.
+                    One or more enabled daily schedules exceed the standard 8 net working hours (duty duration less break).
+                    Super Admin may still save this configuration.
                   </div>
                 </div>
               )}
@@ -1260,28 +1316,6 @@ export const EmployeeManagement: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Email Address:</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="john.rivera@cvgroup.com"
-                    value={newEmpData.email}
-                    onChange={(e) => setNewEmpData({ ...newEmpData, email: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Mobile Number:</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="+63 912 345 6789"
-                    value={newEmpData.mobileNumber}
-                    onChange={(e) => setNewEmpData({ ...newEmpData, mobileNumber: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
-                <div>
                   <label className="block text-slate-400 mb-1 font-semibold">Assigned Business:</label>
                   <select
                     value={newEmpData.businessId}
@@ -1335,59 +1369,28 @@ export const EmployeeManagement: React.FC = () => {
                 </div>
               </div>
 
-              {/* Initial Compensation Settings */}
+              {/* Initial Compensation */}
               <div className="pt-3 border-t border-slate-800">
-                <h4 className="font-bold text-blue-400 text-xs mb-2">Initial Compensation & Schedule</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div>
-                    <label className="block text-slate-400 mb-1">Daily Rate (₱):</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={newCompData.dailyRate}
-                      onChange={(e) => setNewCompData({ ...newCompData, dailyRate: Number(e.target.value) })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Time In:</label>
-                    <input
-                      type="time"
-                      required
-                      value={newSchedData.requiredTimeIn}
-                      onChange={(e) => setNewSchedData({ ...newSchedData, requiredTimeIn: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Break Out / In:</label>
-                    <div className="flex gap-1">
-                      <input
-                        type="time"
-                        value={newSchedData.requiredBreakOut}
-                        onChange={(e) => setNewSchedData({ ...newSchedData, requiredBreakOut: e.target.value })}
-                        className="w-1/2 bg-slate-950 border border-slate-700 rounded-lg p-1 text-white font-mono"
-                      />
-                      <input
-                        type="time"
-                        value={newSchedData.requiredBreakIn}
-                        onChange={(e) => setNewSchedData({ ...newSchedData, requiredBreakIn: e.target.value })}
-                        className="w-1/2 bg-slate-950 border border-slate-700 rounded-lg p-1 text-white font-mono"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Time Out:</label>
-                    <input
-                      type="time"
-                      required
-                      value={newSchedData.requiredTimeOut}
-                      onChange={(e) => setNewSchedData({ ...newSchedData, requiredTimeOut: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono"
-                    />
-                  </div>
+                <h4 className="font-bold text-blue-400 text-xs mb-2">Initial Compensation</h4>
+                <div className="max-w-xs">
+                  <label className="block text-slate-400 mb-1">Daily Rate (₱):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={newCompData.dailyRate}
+                    onChange={(e) => setNewCompData({ ...newCompData, dailyRate: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                  />
                 </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Work schedule, required duty hours, overtime, and holiday rates can be configured separately after the employee account is created.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-3 py-2.5 text-[11px] text-slate-300">
+                <span className="font-bold text-blue-300">Initial login:</span> The employee will sign in using their Employee ID and temporary password. On first login, the employee must provide their own mobile number and email address, then create a new password.
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
