@@ -1,5 +1,5 @@
 import type { Config } from "@netlify/functions";
-import { db, getSessionUserId, hashPassword, json, verifyPassword } from "../lib/auth";
+import { db, getSessionUserId, hashPassword, json, normalizeLogin, verifyPassword } from "../lib/auth";
 
 export default async (req: Request) => {
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -9,10 +9,11 @@ export default async (req: Request) => {
   const body = await req.json().catch(() => null);
   const currentPassword = String(body?.currentPassword || "");
   const newPassword = String(body?.newPassword || "");
-  const rows = await db.sql<{ password_hash: string }>`
-    SELECT password_hash FROM auth_accounts WHERE user_id = ${userId} LIMIT 1
+  const rows = await db.sql<{ password_hash: string; must_change_password: boolean }>`
+    SELECT password_hash, must_change_password FROM auth_accounts WHERE user_id = ${userId} LIMIT 1
   `;
-  if (!rows[0] || !verifyPassword(currentPassword, rows[0].password_hash)) {
+  const passwordToVerify = rows[0]?.must_change_password ? normalizeLogin(currentPassword) : currentPassword;
+  if (!rows[0] || !verifyPassword(passwordToVerify, rows[0].password_hash)) {
     return json({ error: "Current password is incorrect." }, 400);
   }
 
