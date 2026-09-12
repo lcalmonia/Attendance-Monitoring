@@ -45,6 +45,7 @@ import {
   evaluateOvertime,
   calculateEmployeePayroll,
   calculateMinutesBetween,
+  getScheduleForDay,
 } from '../services/payrollEngine';
 
 interface AppContextType {
@@ -444,6 +445,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requiredBreakOut: schedData.requiredBreakOut,
       requiredBreakIn: schedData.requiredBreakIn,
       requiredTimeOut: schedData.requiredTimeOut,
+      dailySchedules: schedData.dailySchedules,
       totalDutyDurationHours: metrics.totalDutyDurationHours,
       requiredBreakDurationHours: metrics.requiredBreakDurationHours,
       netRequiredWorkingHours: metrics.netRequiredWorkingHours,
@@ -651,6 +653,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       requiredBreakOut: schedData.requiredBreakOut,
       requiredBreakIn: schedData.requiredBreakIn,
       requiredTimeOut: schedData.requiredTimeOut,
+      dailySchedules: schedData.dailySchedules,
       totalDutyDurationHours: metrics.totalDutyDurationHours,
       requiredBreakDurationHours: metrics.requiredBreakDurationHours,
       netRequiredWorkingHours: metrics.netRequiredWorkingHours,
@@ -681,9 +684,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const sched = schedules.find((s) => s.employeeId === employeeId);
 
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     const timeHHMM = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    const daySchedule = sched ? getScheduleForDay(sched, now.getDay()) : undefined;
+    if (daySchedule && !daySchedule.enabled) {
+      return { success: false, message: 'You are not scheduled for duty today.' };
+    }
 
     // Find existing record for today
     let existing = attendanceRecords.find(
@@ -699,7 +706,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       // STRICT NO-GRACE-PERIOD LATE CALCULATION
-      const reqTimeIn = sched?.requiredTimeIn || '08:00';
+      const reqTimeIn = daySchedule?.requiredTimeIn || sched?.requiredTimeIn || '08:00';
       const perMinRate = comp?.perMinuteRate || 1.25;
       const lateResult = computeLate(timeHHMM, reqTimeIn, perMinRate);
 
@@ -712,8 +719,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lateMinutes: lateResult.lateMinutes,
         lateOccurrences: lateResult.lateOccurrences,
         lateDeductions: lateResult.lateDeduction,
-        requiredBreakMinutes: sched ? sched.requiredBreakDurationHours * 60 : 60,
+        requiredBreakMinutes: daySchedule
+          ? calculateMinutesBetween(daySchedule.requiredBreakOut, daySchedule.requiredBreakIn)
+          : sched
+          ? sched.requiredBreakDurationHours * 60
+          : 60,
         actualBreakMinutes: 0,
+        undertimeMinutes: 0,
+        undertimeDeductions: 0,
+        overBreakMinutes: 0,
+        overBreakDeductions: 0,
         totalWorkHours: 0,
         status: 'present',
         isHoliday: !!holidayToday,
@@ -769,16 +784,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timeHHMM
       );
 
+      const overBreakMinutes = Math.max(0, breakMins - existing.requiredBreakMinutes);
+      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
       setAttendanceRecords((prev) =>
         prev.map((r) =>
           r.id === existing!.id
-            ? { ...r, breakIn: timeStr, actualBreakMinutes: breakMins }
+            ? { ...r, breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions }
             : r
         )
       );
       return {
         success: true,
-        message: `Break In recorded at ${timeStr} (Actual break: ${breakMins} mins / Req: ${existing.requiredBreakMinutes} mins).`,
+        message: `Break In recorded at ${timeStr} (Actual break: ${breakMins} mins / Req: ${existing.requiredBreakMinutes} mins)${overBreakMinutes > 0 ? `; excess break: ${overBreakMinutes} mins (₱${overBreakDeductions.toFixed(2)} deduction)` : ''}.`,
       };
     }
 
@@ -787,12 +804,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'Time Out has already been recorded for today.' };
       }
 
-      const totalShiftMinutes = calculateMinutesBetween(
-        existing.timeIn.slice(0, 5),
-        timeHHMM
-      );
-      const totalWorkMins = Math.max(0, totalShiftMinutes - (existing.actualBreakMinutes || 0));
+      // Only time worked within the required schedule window is counted as regular work.
+      // Early arrival and approved/pending overtime outside the schedule are not included here.
+      const requiredIn = daySchedule?.requiredTimeIn || sched?.requiredTimeIn || '08:00';
+      const requiredOut = daySchedule?.requiredTimeOut || sched?.requiredTimeOut || '17:00';
+      const actualIn = existing.timeIn.slice(0, 5);
+      const actualOut = timeHHMM;
+      const toMinutes = (value: string) => {
+        const [h, m] = value.split(':').map(Number);
+        return h * 60 + m;
+      };
+      const requiredInMin = toMinutes(requiredIn);
+      const requiredOutMin = toMinutes(requiredOut);
+      const actualInMin = toMinutes(actualIn);
+      const actualOutMin = toMinutes(actualOut);
+      const countedStart = Math.max(actualInMin, requiredInMin);
+      const countedEnd = Math.min(actualOutMin, requiredOutMin);
+      const scheduledWindowMinutes = Math.max(0, countedEnd - countedStart);
+      const totalWorkMins = Math.max(0, scheduledWindowMinutes - (existing.actualBreakMinutes || 0));
       const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
+      const undertimeMinutes = Math.max(0, requiredOutMin - actualOutMin);
+      const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
 
       // Calculate Holiday Duty Pay if holiday
       let holidayDutyPay = 0;
@@ -810,6 +842,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 ...r,
                 timeOut: timeStr,
                 totalWorkHours,
+                undertimeMinutes,
+                undertimeDeductions,
                 holidayDutyPay,
               }
             : r
@@ -819,7 +853,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // AUTOMATIC OVERTIME DETECTION:
       // Compare Actual Time Out with Required Time Out.
       // Minimum overtime requirement check (default 60m).
-      const reqTimeOut = sched?.requiredTimeOut || '17:00';
+      const reqTimeOut = daySchedule?.requiredTimeOut || sched?.requiredTimeOut || '17:00';
       const otEval = evaluateOvertime(
         timeHHMM,
         reqTimeOut,
@@ -864,7 +898,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return {
         success: true,
-        message: `Time Out recorded at ${timeStr} (${totalWorkHours} hrs worked). ${
+        message: `Time Out recorded at ${timeStr} (${totalWorkHours} regular hrs counted)${undertimeMinutes > 0 ? `, ${undertimeMinutes} mins undertime (₱${undertimeDeductions.toFixed(2)} deduction)` : ''}. ${
           otEval.isEligible
             ? `Potential overtime of ${otEval.potentialOvertimeMinutes} mins detected and sent for Super Admin approval.`
             : 'Shift completed.'
