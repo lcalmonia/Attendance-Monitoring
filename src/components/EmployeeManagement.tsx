@@ -16,6 +16,7 @@ import {
   Search,
   Check,
   ShieldAlert,
+  Trash2,
 } from 'lucide-react';
 import { Employee, Compensation, WorkSchedule, EmploymentStatus, AccountStatus, UserRole } from '../types';
 import { calculateRates, calculateScheduleMetrics } from '../services/payrollEngine';
@@ -32,6 +33,7 @@ export const EmployeeManagement: React.FC = () => {
     updateEmployee,
     toggleAccountStatus,
     resetPassword,
+    deleteEmployee,
     updateCompensation,
     updateSchedule,
     assignEmployeeDeduction,
@@ -483,6 +485,23 @@ export const EmployeeManagement: React.FC = () => {
                             title="Reset Employee Password to Default"
                           >
                             <KeyRound className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete Employee */}
+                          <button
+                            onClick={() => {
+                              if (emp.id === currentUser.id) {
+                                alert('You cannot delete the account currently signed in.');
+                                return;
+                              }
+                              if (window.confirm(`Delete ${emp.fullName} and permanently remove the employee record, compensation, schedule, attendance, overtime, deductions, payroll records, and login account?`)) {
+                                deleteEmployee(emp.id);
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30"
+                            title="Delete Employee Permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
 
                           {/* Toggle Active/Inactive */}
