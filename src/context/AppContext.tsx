@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   Business,
   User,
@@ -36,6 +36,7 @@ import {
   INITIAL_NOTIFICATIONS,
   INITIAL_SYSTEM_SETTINGS,
 } from '../services/initialData';
+import { loadAppState, saveAppState } from '../services/netlifyState';
 import {
   calculateRates,
   calculateScheduleMetrics,
@@ -208,6 +209,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const found = users.find((u) => u.id === savedId);
     return found || users[0] || INITIAL_USERS[0];
   });
+
+  // Hydrate shared state from Netlify Database. Local state remains available as a fallback while the API is loading.
+  const [isHydrated, setIsHydrated] = useState(false);
+  const remoteSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadAppState()
+      .then((remote) => {
+        if (cancelled || !remote || Object.keys(remote).length === 0) return;
+
+        if (Array.isArray(remote.businesses)) setBusinesses(remote.businesses as Business[]);
+        if (Array.isArray(remote.users)) setUsers(remote.users as User[]);
+        if (Array.isArray(remote.employees)) setEmployees(remote.employees as Employee[]);
+        if (Array.isArray(remote.compensations)) setCompensations(remote.compensations as Compensation[]);
+        if (Array.isArray(remote.schedules)) setSchedules(remote.schedules as WorkSchedule[]);
+        if (Array.isArray(remote.attendanceRecords)) setAttendanceRecords(remote.attendanceRecords as AttendanceRecord[]);
+        if (Array.isArray(remote.overtimeRecords)) setOvertimeRecords(remote.overtimeRecords as OvertimeRecord[]);
+        if (Array.isArray(remote.holidays)) setHolidays(remote.holidays as Holiday[]);
+        if (Array.isArray(remote.incentivePrograms)) setIncentivePrograms(remote.incentivePrograms as IncentiveProgram[]);
+        if (Array.isArray(remote.deductionTypes)) setDeductionTypes(remote.deductionTypes as DeductionType[]);
+        if (Array.isArray(remote.employeeDeductions)) setEmployeeDeductions(remote.employeeDeductions as EmployeeDeduction[]);
+        if (Array.isArray(remote.payrollPeriods)) setPayrollPeriods(remote.payrollPeriods as PayrollPeriod[]);
+        if (Array.isArray(remote.payrollRecords)) setPayrollRecords(remote.payrollRecords as PayrollRecord[]);
+        if (Array.isArray(remote.auditLogs)) setAuditLogs(remote.auditLogs as AuditLog[]);
+        if (Array.isArray(remote.notifications)) setNotifications(remote.notifications as AppNotification[]);
+        if (remote.systemSettings && typeof remote.systemSettings === 'object') setSystemSettings(remote.systemSettings as SystemSettings);
+        if (typeof remote.currentUserId === 'string') {
+          const remoteUser = (remote.users as User[] | undefined)?.find((user) => user.id === remote.currentUserId);
+          if (remoteUser) setCurrentUser(remoteUser);
+        }
+      })
+      .catch((error) => {
+        console.warn('Netlify shared state is unavailable; using local fallback until the next successful save.', error);
+      })
+      .finally(() => {
+        if (!cancelled) setIsHydrated(true);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
+
+    remoteSaveTimer.current = setTimeout(() => {
+      saveAppState({
+        businesses,
+        users,
+        employees,
+        compensations,
+        schedules,
+        attendanceRecords,
+        overtimeRecords,
+        holidays,
+        incentivePrograms,
+        deductionTypes,
+        employeeDeductions,
+        payrollPeriods,
+        payrollRecords,
+        auditLogs,
+        notifications,
+        systemSettings,
+        currentUserId: currentUser.id,
+      }).catch((error) => console.error('Failed to save shared application state', error));
+    }, 500);
+
+    return () => {
+      if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
+    };
+  }, [
+    isHydrated, businesses, users, employees, compensations, schedules,
+    attendanceRecords, overtimeRecords, holidays, incentivePrograms,
+    deductionTypes, employeeDeductions, payrollPeriods, payrollRecords,
+    auditLogs, notifications, systemSettings, currentUser.id,
+  ]);
 
   // Sync state to localStorage on change
   useEffect(() => saveStorage('businesses', businesses), [businesses]);
