@@ -17,7 +17,11 @@ export default async (req: Request) => {
     SELECT state FROM app_state WHERE id = 'default' LIMIT 1
   `;
   const actorRole = stateRows[0]?.state?.users?.find((user) => user.id === actor)?.role;
-  if (actorRole !== "super_admin") return json({ error: "Only Super Admin can update employee login identifiers." }, 403);
+  const isSuperAdmin = actorRole === "super_admin";
+  const isSelfUpdate = actor === userId;
+  if (!isSuperAdmin && !isSelfUpdate) {
+    return json({ error: "You can only update your own login identifiers." }, 403);
+  }
 
   await db.sql`
     UPDATE auth_accounts
