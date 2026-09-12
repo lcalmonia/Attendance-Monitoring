@@ -6,6 +6,12 @@ export default async (req: Request) => {
   const actor = await getSessionUserId(req);
   if (!actor) return json({ error: "Unauthorized." }, 401);
 
+  const stateRows = await db.sql<{ state: { users?: Array<{ id: string; role: string }> } }>`
+    SELECT state FROM app_state WHERE id = 'default' LIMIT 1
+  `;
+  const actorRole = stateRows[0]?.state?.users?.find((user) => user.id === actor)?.role;
+  if (actorRole !== "super_admin") return json({ error: "Only Super Admin can create or reset employee credentials." }, 403);
+
   const body = await req.json().catch(() => null);
   const userId = String(body?.userId || "");
   const employeeId = String(body?.employeeId || "");
