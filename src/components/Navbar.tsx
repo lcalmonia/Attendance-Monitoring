@@ -199,7 +199,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onLogou
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               </button>
 
-              {/* User Switcher Dropdown */}
               {showRoleMenu && (
                 <div className="absolute right-0 mt-2 w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-50 text-slate-200">
                   <div className="p-2 border-b border-slate-800 mb-2">
@@ -208,38 +207,12 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onLogou
                     <p className="text-xs text-blue-400 font-mono mt-0.5">{currentUser.employeeId}</p>
                     <p className="text-xs text-slate-400 mt-0.5">{currentUser.email}</p>
                   </div>
-
-                  <p className="text-[11px] font-semibold text-slate-400 px-2 py-1 uppercase tracking-wider">
-                    Switch Account (Test Roles)
-                  </p>
-                  <div className="space-y-1">
-                    {users.map((u) => {
-                      const isSelf = u.id === currentUser.id;
-                      const biz = businesses.find((b) => b.id === u.businessId);
-                      return (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            switchUser(u.id);
-                            setShowRoleMenu(false);
-                          }}
-                          className={`w-full text-left px-2.5 py-2 rounded-lg text-xs flex items-center justify-between transition-colors ${
-                            isSelf
-                              ? 'bg-blue-600/20 text-blue-300 font-semibold border border-blue-500/30'
-                              : 'hover:bg-slate-800 text-slate-300'
-                          }`}
-                        >
-                          <div>
-                            <div className="font-medium text-slate-100">{u.fullName}</div>
-                            <div className="text-[10px] text-slate-400">
-                              {u.role.replace('_', ' ')} • {biz?.code || 'CV Group'}
-                            </div>
-                          </div>
-                          {isSelf && <span className="text-[10px] text-blue-400 font-bold">Active</span>}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <button
+                    onClick={() => { onLogout(); setShowRoleMenu(false); }}
+                    className="w-full px-3 py-2 rounded-lg text-xs font-semibold bg-red-500/10 text-red-300 hover:bg-red-500/20 flex items-center gap-2"
+                  >
+                    <LogOut className="w-4 h-4" /> Sign out
+                  </button>
                 </div>
               )}
             </div>
