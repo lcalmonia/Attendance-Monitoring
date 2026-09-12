@@ -871,13 +871,13 @@ export const EmployeeManagement: React.FC = () => {
               </div>
 
               {/* 8-HOUR EXCEED WARNING (Mandatory Rule) */}
-              {liveSchedMetrics.exceedsEightHoursWarning && (
+              {editDailySchedules.filter((item) => item.enabled).some((item) => calculateScheduleMetrics(item.requiredTimeIn, item.requiredBreakOut, item.requiredBreakIn, item.requiredTimeOut).exceedsEightHoursWarning) && (
                 <div className="p-3 bg-amber-500/20 border border-amber-500/50 rounded-xl text-amber-200 text-xs flex items-start gap-2">
                   <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                   <div>
                     <strong className="block text-amber-300">Working Hours Warning</strong>
-                    Net required working hours ({liveSchedMetrics.netRequiredWorkingHours} hrs) exceed the standard 8
-                    hours per day. Super Admin may still save this configuration.
+                    One or more enabled daily schedules exceed the standard 8 net working hours (duty duration less break).
+                    Super Admin may still save this configuration.
                   </div>
                 </div>
               )}
