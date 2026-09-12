@@ -464,6 +464,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const current = employees.find((e) => e.id === id);
     if (!current) return;
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)));
+    if (updates.employeeId !== undefined || updates.mobileNumber !== undefined) {
+      authApi.syncLogin(
+        id,
+        updates.employeeId ?? current.employeeId,
+        updates.mobileNumber ?? current.mobileNumber
+      ).catch((error) => console.error('Employee login identifier sync failed', error));
+    }
     setUsers((prev) =>
       prev.map((u) =>
         u.id === id
