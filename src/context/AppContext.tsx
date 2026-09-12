@@ -81,6 +81,7 @@ interface AppContextType {
   // Employee actions
   addEmployee: (emp: Omit<Employee, 'id'>, comp: Omit<Compensation, 'id' | 'createdAt' | 'employeeId'>, sched: Omit<WorkSchedule, 'id' | 'employeeId'>) => void;
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
+  completeEmployeeOnboarding: (id: string, email: string, mobileNumber: string) => Promise<void>;
   toggleAccountStatus: (userId: string) => void;
   resetPassword: (userId: string) => void;
   deleteEmployee: (userId: string) => void;
@@ -488,6 +489,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       )
     );
     logAudit('Update Employee', 'employee', current.fullName, updates.fullName || current.fullName, `Updated record for ${current.employeeId}`);
+  };
+
+  const completeEmployeeOnboarding = async (
+    id: string,
+    email: string,
+    mobileNumber: string
+  ) => {
+    const current = employees.find((employee) => employee.id === id);
+    if (!current) throw new Error('Employee account was not found.');
+
+    const normalizedEmail = email.trim();
+    const normalizedMobile = mobileNumber.trim();
+    const nextEmployees = employees.map((employee) =>
+      employee.id === id
+        ? { ...employee, email: normalizedEmail, mobileNumber: normalizedMobile }
+        : employee
+    );
+    const nextUsers = users.map((user) =>
+      user.id === id
+        ? { ...user, email: normalizedEmail, mobileNumber: normalizedMobile }
+        : user
+    );
+
+    // Update local state immediately and persist the same data to the shared
+    // Netlify state so Super Admin sees the employee-provided contact details.
+    setEmployees(nextEmployees);
+    setUsers(nextUsers);
+    if (currentUser.id === id) {
+      setCurrentUser((user) => ({
+        ...user,
+        email: normalizedEmail,
+        mobileNumber: normalizedMobile,
+      }));
+    }
+
+    await authApi.syncLogin(id, current.employeeId, normalizedMobile);
+    await saveAppState({
+      businesses,
+      users: nextUsers,
+      employees: nextEmployees,
+      compensations,
+      schedules,
+      attendanceRecords,
+      overtimeRecords,
+      holidays,
+      incentivePrograms,
+      deductionTypes,
+      employeeDeductions,
+      payrollPeriods,
+      payrollRecords,
+      auditLogs,
+      notifications,
+      systemSettings,
+    });
   };
 
   const toggleAccountStatus = (userId: string) => {
@@ -1244,6 +1299,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleBusinessStatus,
         addEmployee,
         updateEmployee,
+        completeEmployeeOnboarding,
         toggleAccountStatus,
         resetPassword,
         deleteEmployee,
