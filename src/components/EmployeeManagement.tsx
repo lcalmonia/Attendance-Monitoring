@@ -1279,28 +1279,6 @@ export const EmployeeManagement: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Email Address:</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="john.rivera@cvgroup.com"
-                    value={newEmpData.email}
-                    onChange={(e) => setNewEmpData({ ...newEmpData, email: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1 font-semibold">Mobile Number:</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="+63 912 345 6789"
-                    value={newEmpData.mobileNumber}
-                    onChange={(e) => setNewEmpData({ ...newEmpData, mobileNumber: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
-                  />
-                </div>
-                <div>
                   <label className="block text-slate-400 mb-1 font-semibold">Assigned Business:</label>
                   <select
                     value={newEmpData.businessId}
@@ -1354,59 +1332,28 @@ export const EmployeeManagement: React.FC = () => {
                 </div>
               </div>
 
-              {/* Initial Compensation Settings */}
+              {/* Initial Compensation */}
               <div className="pt-3 border-t border-slate-800">
-                <h4 className="font-bold text-blue-400 text-xs mb-2">Initial Compensation & Schedule</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div>
-                    <label className="block text-slate-400 mb-1">Daily Rate (₱):</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      value={newCompData.dailyRate}
-                      onChange={(e) => setNewCompData({ ...newCompData, dailyRate: Number(e.target.value) })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Time In:</label>
-                    <input
-                      type="time"
-                      required
-                      value={newSchedData.requiredTimeIn}
-                      onChange={(e) => setNewSchedData({ ...newSchedData, requiredTimeIn: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Break Out / In:</label>
-                    <div className="flex gap-1">
-                      <input
-                        type="time"
-                        value={newSchedData.requiredBreakOut}
-                        onChange={(e) => setNewSchedData({ ...newSchedData, requiredBreakOut: e.target.value })}
-                        className="w-1/2 bg-slate-950 border border-slate-700 rounded-lg p-1 text-white font-mono"
-                      />
-                      <input
-                        type="time"
-                        value={newSchedData.requiredBreakIn}
-                        onChange={(e) => setNewSchedData({ ...newSchedData, requiredBreakIn: e.target.value })}
-                        className="w-1/2 bg-slate-950 border border-slate-700 rounded-lg p-1 text-white font-mono"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-slate-400 mb-1">Time Out:</label>
-                    <input
-                      type="time"
-                      required
-                      value={newSchedData.requiredTimeOut}
-                      onChange={(e) => setNewSchedData({ ...newSchedData, requiredTimeOut: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-1.5 text-white font-mono"
-                    />
-                  </div>
+                <h4 className="font-bold text-blue-400 text-xs mb-2">Initial Compensation</h4>
+                <div className="max-w-xs">
+                  <label className="block text-slate-400 mb-1">Daily Rate (₱):</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={newCompData.dailyRate}
+                    onChange={(e) => setNewCompData({ ...newCompData, dailyRate: Number(e.target.value) })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono"
+                  />
                 </div>
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Work schedule, required duty hours, overtime, and holiday rates can be configured separately after the employee account is created.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-3 py-2.5 text-[11px] text-slate-300">
+                <span className="font-bold text-blue-300">Initial login:</span> The employee will sign in using their Employee ID and temporary password. On first login, the employee must provide their own mobile number and email address, then create a new password.
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
