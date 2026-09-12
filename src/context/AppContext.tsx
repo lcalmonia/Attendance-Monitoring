@@ -83,6 +83,7 @@ interface AppContextType {
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
   toggleAccountStatus: (userId: string) => void;
   resetPassword: (userId: string) => void;
+  deleteEmployee: (userId: string) => void;
 
   // Compensation actions
   updateCompensation: (comp: Omit<Compensation, 'id' | 'createdAt'> & { id?: string }, reason?: string) => void;
@@ -503,6 +504,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       })
       .catch((error) => console.error('Password reset failed', error));
+  };
+
+  const deleteEmployee = (userId: string) => {
+    if (userId === currentUser.id) {
+      console.warn('The currently signed-in account cannot be deleted.');
+      return;
+    }
+    const current = employees.find((e) => e.id === userId);
+    if (!current) return;
+
+    authApi.deleteAccount(userId)
+      .catch((error) => console.error('Employee authentication account deletion failed', error));
+
+    setEmployees((prev) => prev.filter((e) => e.id !== userId));
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setCompensations((prev) => prev.filter((c) => c.employeeId !== userId));
+    setSchedules((prev) => prev.filter((s) => s.employeeId !== userId));
+    setAttendanceRecords((prev) => prev.filter((record) => record.employeeId !== userId));
+    setOvertimeRecords((prev) => prev.filter((record) => record.employeeId !== userId));
+    setEmployeeDeductions((prev) => prev.filter((deduction) => deduction.employeeId !== userId));
+    setPayrollRecords((prev) => prev.filter((record) => record.employeeId !== userId));
+    setNotifications((prev) => prev.filter((notification) => notification.targetUserId !== userId));
+
+    logAudit('Delete Employee', 'employee', current.fullName, 'Deleted', `Employee ID: ${current.employeeId}`);
   };
 
   // Compensation Update (Preserves history!)
@@ -1214,6 +1239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateEmployee,
         toggleAccountStatus,
         resetPassword,
+        deleteEmployee,
         updateCompensation,
         updateSchedule,
         recordAttendance,
