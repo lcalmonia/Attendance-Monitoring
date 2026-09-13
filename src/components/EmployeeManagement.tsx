@@ -5,20 +5,15 @@ import {
   Plus,
   Edit2,
   DollarSign,
-  Clock,
   Receipt,
   KeyRound,
   CheckCircle,
   XCircle,
-  Building,
-  AlertTriangle,
   X,
   Search,
-  Check,
-  ShieldAlert,
   Trash2,
 } from 'lucide-react';
-import { Employee, Compensation, WorkSchedule, EmploymentStatus, AccountStatus, UserRole, DailySchedule } from '../types';
+import { Employee, Compensation, EmploymentStatus, AccountStatus, UserRole } from '../types';
 import { calculateRates, calculateScheduleMetrics } from '../services/payrollEngine';
 
 export const EmployeeManagement: React.FC = () => {
@@ -27,7 +22,6 @@ export const EmployeeManagement: React.FC = () => {
     users,
     businesses,
     compensations,
-    schedules,
     deductionTypes,
     employeeDeductions,
     addEmployee,
@@ -49,7 +43,6 @@ export const EmployeeManagement: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [managingCompEmp, setManagingCompEmp] = useState<Employee | null>(null);
-  const [managingSchedEmp, setManagingSchedEmp] = useState<Employee | null>(null);
   const [managingDedsEmp, setManagingDedsEmp] = useState<Employee | null>(null);
 
   // Add Employee Form State
@@ -94,14 +87,6 @@ export const EmployeeManagement: React.FC = () => {
   const [editEffectiveDate, setEditEffectiveDate] = useState<string>(new Date().toISOString().slice(0, 10));
   const [compReason, setCompReason] = useState<string>('');
 
-  // Edit Sched Form State
-  const [editDutyDays, setEditDutyDays] = useState<number[]>([1, 2, 3, 4, 5, 6]);
-  const [editTimeIn, setEditTimeIn] = useState('08:00');
-  const [editBreakOut, setEditBreakOut] = useState('12:00');
-  const [editBreakIn, setEditBreakIn] = useState('13:00');
-  const [editTimeOut, setEditTimeOut] = useState('17:00');
-  const [editDailySchedules, setEditDailySchedules] = useState<DailySchedule[]>([]);
-  const [schedReason, setSchedReason] = useState('');
 
   // Edit Employee Details Form State
   const [editEmpData, setEditEmpData] = useState({
@@ -195,34 +180,6 @@ export const EmployeeManagement: React.FC = () => {
     setCompReason('');
   };
 
-  // Open Schedule Modal
-  const openSchedModal = (emp: Employee) => {
-    const sched = schedules.find((s) => s.employeeId === emp.id);
-    setManagingSchedEmp(emp);
-    const fallbackDays = sched?.requiredDutyDays || [1, 2, 3, 4, 5, 6];
-    const fallback = {
-      requiredTimeIn: sched?.requiredTimeIn || '08:00',
-      requiredBreakOut: sched?.requiredBreakOut || '12:00',
-      requiredBreakIn: sched?.requiredBreakIn || '13:00',
-      requiredTimeOut: sched?.requiredTimeOut || '17:00',
-    };
-    const normalizedDaily = [1, 2, 3, 4, 5, 6, 0].map((day) =>
-      sched?.dailySchedules?.find((item) => item.day === day) || {
-        day,
-        enabled: fallbackDays.includes(day),
-        ...fallback,
-      }
-    );
-    setEditDailySchedules(normalizedDaily);
-    const firstEnabled = normalizedDaily.find((item) => item.enabled) || normalizedDaily[0];
-    setEditDutyDays(normalizedDaily.filter((item) => item.enabled).map((item) => item.day));
-    setEditTimeIn(firstEnabled.requiredTimeIn);
-    setEditBreakOut(firstEnabled.requiredBreakOut);
-    setEditBreakIn(firstEnabled.requiredBreakIn);
-    setEditTimeOut(firstEnabled.requiredTimeOut);
-    setSchedReason('');
-  };
-
   // Save Compensation
   const handleSaveComp = (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,46 +201,6 @@ export const EmployeeManagement: React.FC = () => {
       compReason
     );
     setManagingCompEmp(null);
-  };
-
-  // Save Schedule
-  const handleSaveSched = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!managingSchedEmp) return;
-
-    const enabledDays = editDailySchedules.filter((item) => item.enabled);
-    if (enabledDays.length === 0) {
-      alert('Please enable at least one required duty day.');
-      return;
-    }
-    const primary = enabledDays[0];
-    const primaryMetrics = calculateScheduleMetrics(
-      primary.requiredTimeIn,
-      primary.requiredBreakOut,
-      primary.requiredBreakIn,
-      primary.requiredTimeOut
-    );
-    const anyOverEight = enabledDays.some((item) =>
-      calculateScheduleMetrics(item.requiredTimeIn, item.requiredBreakOut, item.requiredBreakIn, item.requiredTimeOut).exceedsEightHoursWarning
-    );
-
-    updateSchedule(
-      {
-        employeeId: managingSchedEmp.id,
-        requiredDutyDays: enabledDays.map((item) => item.day),
-        requiredTimeIn: primary.requiredTimeIn,
-        requiredBreakOut: primary.requiredBreakOut,
-        requiredBreakIn: primary.requiredBreakIn,
-        requiredTimeOut: primary.requiredTimeOut,
-        dailySchedules: editDailySchedules,
-        totalDutyDurationHours: primaryMetrics.totalDutyDurationHours,
-        requiredBreakDurationHours: primaryMetrics.requiredBreakDurationHours,
-        netRequiredWorkingHours: primaryMetrics.netRequiredWorkingHours,
-        exceedsEightHoursWarning: anyOverEight,
-      },
-      schedReason
-    );
-    setManagingSchedEmp(null);
   };
 
   // Handle Add Employee Submit
@@ -480,50 +397,41 @@ export const EmployeeManagement: React.FC = () => {
                     {/* Actions Menu */}
                     {currentUser.role === 'super_admin' && (
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex min-w-max items-center justify-end gap-2">
                           {/* Edit Employee Details */}
                           <button
                             onClick={() => handleOpenEditEmployee(emp)}
-                            className="p-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-colors"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 transition-colors"
                             title="Edit Employee Details (Profile, Business, Role, Status)"
                           >
-                            <Edit2 className="w-3.5 h-3.5" />
+                            <Edit2 className="w-4 h-4 shrink-0 stroke-current" />
                           </button>
 
                           {/* Configure Compensation */}
                           <button
                             onClick={() => openCompModal(emp)}
-                            className="p-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30"
                             title="Configure Individual Compensation"
                           >
-                            <DollarSign className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Configure Schedule */}
-                          <button
-                            onClick={() => openSchedModal(emp)}
-                            className="p-1.5 rounded-lg bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30"
-                            title="Configure Work Schedule (Duty & Break hours)"
-                          >
-                            <Clock className="w-3.5 h-3.5" />
+                            <DollarSign className="w-4 h-4 shrink-0 stroke-current" />
                           </button>
 
                           {/* Manage Deductions */}
                           <button
                             onClick={() => setManagingDedsEmp(emp)}
-                            className="p-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30"
                             title="Assign / View Deductions"
                           >
-                            <Receipt className="w-3.5 h-3.5" />
+                            <Receipt className="w-4 h-4 shrink-0 stroke-current" />
                           </button>
 
                           {/* Reset Password */}
                           <button
                             onClick={() => resetPassword(emp.id)}
-                            className="p-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30"
                             title="Reset Employee Password to Default"
                           >
-                            <KeyRound className="w-3.5 h-3.5" />
+                            <KeyRound className="w-4 h-4 shrink-0 stroke-current" />
                           </button>
 
                           {/* Delete Employee */}
@@ -537,16 +445,16 @@ export const EmployeeManagement: React.FC = () => {
                                 deleteEmployee(emp.id);
                               }
                             }}
-                            className="p-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30"
                             title="Delete Employee Permanently"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-4 h-4 shrink-0 stroke-current" />
                           </button>
 
                           {/* Toggle Active/Inactive */}
                           <button
                             onClick={() => toggleAccountStatus(emp.id)}
-                            className={`p-1.5 rounded-lg border ${
+                            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                               emp.accountStatus === 'active'
                                 ? 'bg-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/40'
                                 : 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30'
@@ -554,9 +462,9 @@ export const EmployeeManagement: React.FC = () => {
                             title={emp.accountStatus === 'active' ? 'Deactivate Account' : 'Activate Account'}
                           >
                             {emp.accountStatus === 'active' ? (
-                              <XCircle className="w-3.5 h-3.5" />
+                              <XCircle className="w-4 h-4 shrink-0 stroke-current" />
                             ) : (
-                              <CheckCircle className="w-3.5 h-3.5" />
+                              <CheckCircle className="w-4 h-4 shrink-0 stroke-current" />
                             )}
                           </button>
                         </div>
@@ -741,173 +649,6 @@ export const EmployeeManagement: React.FC = () => {
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md"
                 >
                   Save & Update History
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CONFIGURE WORK SCHEDULE MODAL (8-hour warning check!) */}
-      {managingSchedEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-teal-400" />
-                <h3 className="font-bold text-white text-base">Configure Work Schedule</h3>
-              </div>
-              <button
-                onClick={() => setManagingSchedEmp(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveSched} className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 text-xs">
-              <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
-                <div>
-                  <span className="text-slate-500">Employee:</span>{' '}
-                  <strong className="text-white">{managingSchedEmp.fullName}</strong>
-                </div>
-              </div>
-
-              {/* Per-Day Schedule Configuration */}
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-bold">Weekly Schedule by Day</label>
-                  <p className="text-[11px] text-slate-500">
-                    Each day can have its own opening/closing shift and break schedule.
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  { day: 1, label: 'Monday' },
-                  { day: 2, label: 'Tuesday' },
-                  { day: 3, label: 'Wednesday' },
-                  { day: 4, label: 'Thursday' },
-                  { day: 5, label: 'Friday' },
-                  { day: 6, label: 'Saturday' },
-                  { day: 0, label: 'Sunday' },
-                ].map((dayInfo) => {
-                  const daySchedule = editDailySchedules.find((item) => item.day === dayInfo.day) || {
-                    day: dayInfo.day,
-                    enabled: false,
-                    requiredTimeIn: '08:00',
-                    requiredBreakOut: '12:00',
-                    requiredBreakIn: '13:00',
-                    requiredTimeOut: '17:00',
-                  };
-                  const metrics = calculateScheduleMetrics(
-                    daySchedule.requiredTimeIn,
-                    daySchedule.requiredBreakOut,
-                    daySchedule.requiredBreakIn,
-                    daySchedule.requiredTimeOut
-                  );
-                  const updateDay = (updates: Partial<DailySchedule>) => {
-                    setEditDailySchedules((prev) =>
-                      prev.map((item) =>
-                        item.day === dayInfo.day ? { ...item, ...updates } : item
-                      )
-                    );
-                  };
-                  return (
-                    <div key={dayInfo.day} className={`rounded-xl border p-3 space-y-2 ${daySchedule.enabled ? 'bg-slate-950 border-slate-700' : 'bg-slate-950/40 border-slate-800'}`}>
-                      <div className="flex items-center justify-between">
-                        <label className="flex items-center gap-2 font-bold text-white cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={daySchedule.enabled}
-                            onChange={(e) => updateDay({ enabled: e.target.checked })}
-                            className="accent-blue-600"
-                          />
-                          {dayInfo.label}
-                        </label>
-                        {daySchedule.enabled && (
-                          <span className={`text-[10px] font-semibold ${metrics.exceedsEightHoursWarning ? 'text-amber-400' : 'text-emerald-400'}`}>
-                            Net: {metrics.netRequiredWorkingHours}h
-                          </span>
-                        )}
-                      </div>
-                      {daySchedule.enabled && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-slate-500 mb-1">Time In</label>
-                            <input type="time" value={daySchedule.requiredTimeIn} onChange={(e) => updateDay({ requiredTimeIn: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
-                          </div>
-                          <div>
-                            <label className="block text-slate-500 mb-1">Time Out</label>
-                            <input type="time" value={daySchedule.requiredTimeOut} onChange={(e) => updateDay({ requiredTimeOut: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
-                          </div>
-                          <div>
-                            <label className="block text-slate-500 mb-1">Break Out</label>
-                            <input type="time" value={daySchedule.requiredBreakOut} onChange={(e) => updateDay({ requiredBreakOut: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
-                          </div>
-                          <div>
-                            <label className="block text-slate-500 mb-1">Break In</label>
-                            <input type="time" value={daySchedule.requiredBreakIn} onChange={(e) => updateDay({ requiredBreakIn: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-white font-mono" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                </div>
-              </div>
-
-              {/* Schedule Duration & Break Calculation */}
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-400">
-                  <span>Total Duty Duration:</span>
-                  <span className="font-mono text-white">{liveSchedMetrics.totalDutyDurationHours} hours</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Required Break Duration:</span>
-                  <span className="font-mono text-white">{liveSchedMetrics.requiredBreakDurationHours} hours</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-slate-800 text-emerald-400 font-bold">
-                  <span>Net Required Working Hours:</span>
-                  <span className="font-mono">{liveSchedMetrics.netRequiredWorkingHours} hours</span>
-                </div>
-              </div>
-
-              {/* 8-HOUR EXCEED WARNING (Mandatory Rule) */}
-              {editDailySchedules.filter((item) => item.enabled).some((item) => calculateScheduleMetrics(item.requiredTimeIn, item.requiredBreakOut, item.requiredBreakIn, item.requiredTimeOut).exceedsEightHoursWarning) && (
-                <div className="p-3 bg-amber-500/20 border border-amber-500/50 rounded-xl text-amber-200 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="block text-amber-300">Working Hours Warning</strong>
-                    One or more enabled daily schedules exceed the standard 8 net working hours (duty duration less break).
-                    Super Admin may still save this configuration.
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Notes / Shift Label:</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Regular Opening Shift"
-                  value={schedReason}
-                  onChange={(e) => setSchedReason(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white placeholder-slate-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setManagingSchedEmp(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md"
-                >
-                  Save Schedule
                 </button>
               </div>
             </form>
