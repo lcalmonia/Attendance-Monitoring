@@ -15,7 +15,10 @@ export type AttendanceStatus =
   | 'vacation_leave'
   | 'emergency_leave'
   | 'other'
-  | 'not_timed_in';
+  | 'not_timed_in'
+  | 'incomplete_duty'
+  | 'outside_scheduled_day'
+  | 'outside_scheduled_time';
 
 export type OvertimeStatus = 'pending' | 'approved' | 'disapproved';
 
@@ -132,6 +135,19 @@ export interface WorkSchedule {
   requiredBreakDurationHours: number;
   netRequiredWorkingHours: number;
   exceedsEightHoursWarning: boolean;
+}
+
+export interface DateSchedule {
+  id: string;
+  employeeId: string;
+  payrollPeriodId: string;
+  date: string; // YYYY-MM-DD
+  enabled: boolean;
+  requiredTimeIn: string;
+  requiredBreakOut: string;
+  requiredBreakIn: string;
+  requiredTimeOut: string;
+  notes?: string;
 }
 
 export interface AttendanceRecord {

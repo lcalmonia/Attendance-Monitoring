@@ -18,6 +18,7 @@ import {
   AppNotification,
   SystemSettings,
   PayrollStatus,
+  DateSchedule,
 } from '../types';
 import {
   INITIAL_BUSINESSES,
@@ -56,6 +57,7 @@ interface AppContextType {
   businesses: Business[];
   compensations: Compensation[];
   schedules: WorkSchedule[];
+  dateSchedules: DateSchedule[];
   attendanceRecords: AttendanceRecord[];
   overtimeRecords: OvertimeRecord[];
   holidays: Holiday[];
@@ -78,6 +80,7 @@ interface AppContextType {
   addBusiness: (biz: Omit<Business, 'id' | 'createdAt'>) => void;
   updateBusiness: (id: string, updates: Partial<Business>) => void;
   toggleBusinessStatus: (id: string) => void;
+  deleteBusiness: (id: string) => { success: boolean; message: string };
 
   // Employee actions
   addEmployee: (emp: Omit<Employee, 'id'>, comp: Omit<Compensation, 'id' | 'createdAt' | 'employeeId'>, sched: Omit<WorkSchedule, 'id' | 'employeeId'>) => void;
@@ -92,10 +95,12 @@ interface AppContextType {
 
   // Schedule actions
   updateSchedule: (sched: Omit<WorkSchedule, 'id'> & { id?: string }, reason?: string) => void;
+  saveDateSchedules: (employeeId: string, payrollPeriodId: string, entries: Omit<DateSchedule, 'id' | 'employeeId' | 'payrollPeriodId'>[], reason?: string) => void;
 
   // Attendance Clock actions
   recordAttendance: (employeeId: string, action: AttendanceAction) => { success: boolean; message: string };
   adjustAttendance: (recordId: string, updates: Partial<AttendanceRecord>, reason: string) => void;
+  deleteAttendance: (recordId: string, reason: string) => { success: boolean; message: string };
 
   // Overtime review actions
   reviewOvertime: (otId: string, status: 'approved' | 'disapproved', notes?: string) => void;
@@ -170,6 +175,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [schedules, setSchedules] = useState<WorkSchedule[]>(() =>
     loadStorage('schedules', INITIAL_SCHEDULES)
   );
+  const [dateSchedules, setDateSchedules] = useState<DateSchedule[]>(() =>
+    loadStorage('date_schedules', [])
+  );
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() =>
     loadStorage('attendance', INITIAL_ATTENDANCE_RECORDS)
   );
@@ -231,6 +239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (Array.isArray(remote.employees)) setEmployees(remote.employees as Employee[]);
         if (Array.isArray(remote.compensations)) setCompensations(remote.compensations as Compensation[]);
         if (Array.isArray(remote.schedules)) setSchedules(remote.schedules as WorkSchedule[]);
+        if (Array.isArray(remote.dateSchedules)) setDateSchedules(remote.dateSchedules as DateSchedule[]);
         if (Array.isArray(remote.attendanceRecords)) setAttendanceRecords(remote.attendanceRecords as AttendanceRecord[]);
         if (Array.isArray(remote.overtimeRecords)) setOvertimeRecords(remote.overtimeRecords as OvertimeRecord[]);
         if (Array.isArray(remote.holidays)) setHolidays(remote.holidays as Holiday[]);
@@ -264,6 +273,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         employees,
         compensations,
         schedules,
+        dateSchedules,
         attendanceRecords,
         overtimeRecords,
         holidays,
@@ -282,7 +292,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (remoteSaveTimer.current) clearTimeout(remoteSaveTimer.current);
     };
   }, [
-    isHydrated, businesses, users, employees, compensations, schedules,
+    isHydrated, businesses, users, employees, compensations, schedules, dateSchedules,
     attendanceRecords, overtimeRecords, holidays, incentivePrograms,
     deductionTypes, employeeDeductions, payrollPeriods, payrollRecords,
     auditLogs, notifications, systemSettings, currentUser.id,
@@ -294,6 +304,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => saveStorage('employees', employees), [employees]);
   useEffect(() => saveStorage('compensations', compensations), [compensations]);
   useEffect(() => saveStorage('schedules', schedules), [schedules]);
+  useEffect(() => saveStorage('date_schedules', dateSchedules), [dateSchedules]);
   useEffect(() => saveStorage('attendance', attendanceRecords), [attendanceRecords]);
   useEffect(() => saveStorage('overtime', overtimeRecords), [overtimeRecords]);
   useEffect(() => saveStorage('holidays', holidays), [holidays]);
@@ -393,6 +404,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b))
     );
     logAudit('Toggle Business Status', 'business', current.status, newStatus, `Business: ${current.name}`);
+  };
+
+  const deleteBusiness = (id: string) => {
+    if (currentUser.role !== 'super_admin') return { success: false, message: 'Only Super Admin can delete a business.' };
+    const current = businesses.find((b) => b.id === id);
+    if (!current) return { success: false, message: 'Business not found.' };
+    const hasEmployees = employees.some((e) => e.businessId === id);
+    const hasAttendance = attendanceRecords.some((r) => r.businessId === id);
+    const hasPayroll = payrollRecords.some((r) => r.businessId === id);
+    const hasSchedules = dateSchedules.some((entry) => {
+      const emp = employees.find((e) => e.id === entry.employeeId);
+      return emp?.businessId === id;
+    });
+    if (hasEmployees || hasAttendance || hasPayroll || hasSchedules) {
+      return { success: false, message: 'Business cannot be permanently deleted because historical employees, schedules, attendance, or payroll records are linked to it. Deactivate it instead.' };
+    }
+    setBusinesses((prev) => prev.filter((b) => b.id !== id));
+    logAudit('Delete Business', 'business', current.name, 'Deleted', 'Business had no dependent historical records.');
+    return { success: true, message: 'Business deleted successfully.' };
   };
 
   // Employee Actions
@@ -533,6 +563,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       employees: nextEmployees,
       compensations,
       schedules,
+      dateSchedules,
       attendanceRecords,
       overtimeRecords,
       holidays,
@@ -675,247 +706,151 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
   };
 
+  const saveDateSchedules = (
+    employeeId: string,
+    payrollPeriodId: string,
+    entries: Omit<DateSchedule, 'id' | 'employeeId' | 'payrollPeriodId'>[],
+    reason?: string
+  ) => {
+    const period = payrollPeriods.find((item) => item.id === payrollPeriodId);
+    const nextEntries: DateSchedule[] = entries.map((entry) => ({
+      ...entry,
+      id: `date_sched_${employeeId}_${entry.date}`,
+      employeeId,
+      payrollPeriodId,
+    }));
+    setDateSchedules((prev) => [
+      ...prev.filter((entry) => !(entry.employeeId === employeeId && entry.payrollPeriodId === payrollPeriodId)),
+      ...nextEntries,
+    ]);
+    const emp = employees.find((e) => e.id === employeeId);
+    logAudit(
+      'Payroll Period Schedule Configured',
+      'schedule',
+      'Previous date schedule',
+      `${nextEntries.filter((entry) => entry.enabled).length} scheduled date(s)`,
+      `Employee: ${emp?.fullName || employeeId}; Period: ${period?.name || payrollPeriodId}. ${reason || ''}`
+    );
+  };
+
   // Attendance Actions (Real-time clocking)
   const recordAttendance = (employeeId: string, action: AttendanceAction) => {
     const emp = employees.find((e) => e.id === employeeId);
     if (!emp) return { success: false, message: 'Employee not found.' };
-
     const comp = compensations.find((c) => c.employeeId === employeeId);
-    const sched = schedules.find((s) => s.employeeId === employeeId);
-
+    const weeklySchedule = schedules.find((item) => item.employeeId === employeeId);
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-    const timeHHMM = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const daySchedule = sched ? getScheduleForDay(sched, now.getDay()) : undefined;
-    if (daySchedule && !daySchedule.enabled) {
-      return { success: false, message: 'You are not scheduled for duty today.' };
-    }
-
-    // Find existing record for today
-    let existing = attendanceRecords.find(
-      (r) => r.employeeId === employeeId && r.date === todayStr
-    );
-
-    // Check holiday for today
+    const timeHHMM = timeStr.slice(0, 5);
+    const toMinutes = (value: string) => {
+      const [h, m] = value.slice(0, 5).split(':').map(Number);
+      return h * 60 + m;
+    };
+    const period = payrollPeriods.find((item) => todayStr >= item.startDate && todayStr <= item.endDate);
+    const dateSchedule = dateSchedules.find((item) => item.employeeId === employeeId && item.date === todayStr && (!period || item.payrollPeriodId === period.id));
+    const fallback = weeklySchedule ? getScheduleForDay(weeklySchedule, now.getDay()) : undefined;
+    const activeSchedule = dateSchedule || fallback;
     const holidayToday = holidays.find((h) => h.date === todayStr);
+    let existing = attendanceRecords.find((r) => r.employeeId === employeeId && r.date === todayStr);
 
     if (action === 'time_in') {
-      if (existing?.timeIn) {
-        return { success: false, message: 'You have already recorded Time In for today.' };
-      }
-
-      // STRICT NO-GRACE-PERIOD LATE CALCULATION
-      const reqTimeIn = daySchedule?.requiredTimeIn || sched?.requiredTimeIn || '08:00';
-      const perMinRate = comp?.perMinuteRate || 1.25;
-      const lateResult = computeLate(timeHHMM, reqTimeIn, perMinRate);
-
-      const newRecord: AttendanceRecord = {
+      if (existing?.timeIn) return { success: false, message: 'You have already recorded Time In for today.' };
+      const isScheduledDay = !!activeSchedule?.enabled;
+      const reqIn = activeSchedule?.requiredTimeIn || weeklySchedule?.requiredTimeIn || '08:00';
+      const reqOut = activeSchedule?.requiredTimeOut || weeklySchedule?.requiredTimeOut || '17:00';
+      const outsideTime = isScheduledDay && (toMinutes(timeHHMM) < toMinutes(reqIn) || toMinutes(timeHHMM) > toMinutes(reqOut));
+      const late = isScheduledDay && !outsideTime ? computeLate(timeHHMM, reqIn, comp?.perMinuteRate || 0) : { lateMinutes: 0, lateOccurrences: 0, lateDeduction: 0 };
+      const status: AttendanceRecord['status'] = !isScheduledDay
+        ? 'outside_scheduled_day'
+        : outsideTime
+        ? 'outside_scheduled_time'
+        : 'not_timed_in';
+      const record: AttendanceRecord = {
         id: `att_${employeeId}_${Date.now()}`,
         employeeId,
         businessId: emp.businessId,
         date: todayStr,
         timeIn: timeStr,
-        lateMinutes: lateResult.lateMinutes,
-        lateOccurrences: lateResult.lateOccurrences,
-        lateDeductions: lateResult.lateDeduction,
-        requiredBreakMinutes: daySchedule
-          ? calculateMinutesBetween(daySchedule.requiredBreakOut, daySchedule.requiredBreakIn)
-          : sched
-          ? sched.requiredBreakDurationHours * 60
-          : 60,
+        lateMinutes: late.lateMinutes,
+        lateOccurrences: late.lateOccurrences,
+        lateDeductions: late.lateDeduction,
+        requiredBreakMinutes: activeSchedule ? calculateMinutesBetween(activeSchedule.requiredBreakOut, activeSchedule.requiredBreakIn) : 60,
         actualBreakMinutes: 0,
         undertimeMinutes: 0,
         undertimeDeductions: 0,
         overBreakMinutes: 0,
         overBreakDeductions: 0,
         totalWorkHours: 0,
-        status: 'present',
+        status,
         isHoliday: !!holidayToday,
         holidayName: holidayToday?.name,
         holidayRateMultiplier: holidayToday?.rateMultiplier,
         holidayDutyPay: 0,
+        remarks: !isScheduledDay ? 'Clock attempt outside scheduled duty day.' : outsideTime ? 'Clock attempt outside scheduled duty time.' : undefined,
       };
-
-      setAttendanceRecords((prev) => [...prev, newRecord]);
-
-      if (lateResult.lateMinutes > 0) {
-        pushNotification({
-          targetUserId: employeeId,
-          title: 'Tardiness Recorded',
-          message: `You timed in at ${timeHHMM} (${lateResult.lateMinutes} mins late, deduction: ₱${lateResult.lateDeduction.toFixed(2)}).`,
-          type: 'warning',
-        });
-      }
-
-      return {
-        success: true,
-        message: `Time In recorded at ${timeStr}${
-          lateResult.lateMinutes > 0 ? ` (${lateResult.lateMinutes} min late, ₱${lateResult.lateDeduction.toFixed(2)} deduction)` : ' (On Time)'
-        }. CCTV verified.`,
-      };
+      setAttendanceRecords((prev) => [...prev, record]);
+      if (!isScheduledDay) return { success: true, message: 'Clock attempt recorded as Outside Scheduled Day. It will not count as a payable present day.' };
+      if (outsideTime) return { success: true, message: 'Clock attempt recorded as Outside Scheduled Time. It will not count as regular payable attendance.' };
+      if (late.lateMinutes > 0) pushNotification({ targetUserId: employeeId, title: 'Tardiness Recorded', message: `You timed in ${late.lateMinutes} minute(s) late.`, type: 'warning' });
+      return { success: true, message: `Time In recorded at ${timeStr}. CCTV verified.` };
     }
 
-    if (!existing || !existing.timeIn) {
-      return { success: false, message: 'Please record Time In first before breaks or Time Out.' };
-    }
-
+    if (!existing || !existing.timeIn) return { success: false, message: 'Please record Time In first before breaks or Time Out.' };
     if (action === 'break_out') {
-      if (existing.breakOut) {
-        return { success: false, message: 'Break Out has already been recorded.' };
-      }
-      setAttendanceRecords((prev) =>
-        prev.map((r) => (r.id === existing!.id ? { ...r, breakOut: timeStr } : r))
-      );
-      return { success: true, message: `Break Out recorded at ${timeStr}. Enjoy your meal!` };
+      if (existing.breakOut) return { success: false, message: 'Break Out has already been recorded.' };
+      setAttendanceRecords((prev) => prev.map((r) => r.id === existing!.id ? { ...r, breakOut: timeStr } : r));
+      return { success: true, message: `Break Out recorded at ${timeStr}.` };
     }
-
     if (action === 'break_in') {
-      if (!existing.breakOut) {
-        return { success: false, message: 'Please record Break Out before Break In.' };
-      }
-      if (existing.breakIn) {
-        return { success: false, message: 'Break In has already been recorded.' };
-      }
-
-      // Calculate actual break duration
-      const breakMins = calculateMinutesBetween(
-        existing.breakOut.slice(0, 5),
-        timeHHMM
-      );
-
+      if (!existing.breakOut) return { success: false, message: 'Please record Break Out before Break In.' };
+      if (existing.breakIn) return { success: false, message: 'Break In has already been recorded.' };
+      const breakMins = calculateMinutesBetween(existing.breakOut.slice(0, 5), timeHHMM);
       const overBreakMinutes = Math.max(0, breakMins - existing.requiredBreakMinutes);
       const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      setAttendanceRecords((prev) =>
-        prev.map((r) =>
-          r.id === existing!.id
-            ? { ...r, breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions }
-            : r
-        )
-      );
-      return {
-        success: true,
-        message: `Break In recorded at ${timeStr} (Actual break: ${breakMins} mins / Req: ${existing.requiredBreakMinutes} mins)${overBreakMinutes > 0 ? `; excess break: ${overBreakMinutes} mins (₱${overBreakDeductions.toFixed(2)} deduction)` : ''}.`,
-      };
+      setAttendanceRecords((prev) => prev.map((r) => r.id === existing!.id ? { ...r, breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions } : r));
+      return { success: true, message: `Break In recorded at ${timeStr}.` };
     }
-
     if (action === 'time_out') {
-      if (existing.timeOut) {
-        return { success: false, message: 'Time Out has already been recorded for today.' };
-      }
-
-      // Only time worked within the required schedule window is counted as regular work.
-      // Early arrival and approved/pending overtime outside the schedule are not included here.
-      const requiredIn = daySchedule?.requiredTimeIn || sched?.requiredTimeIn || '08:00';
-      const requiredOut = daySchedule?.requiredTimeOut || sched?.requiredTimeOut || '17:00';
-      const actualIn = existing.timeIn.slice(0, 5);
-      const actualOut = timeHHMM;
-      const toMinutes = (value: string) => {
-        const [h, m] = value.split(':').map(Number);
-        return h * 60 + m;
-      };
-      const requiredInMin = toMinutes(requiredIn);
-      const requiredOutMin = toMinutes(requiredOut);
-      const actualInMin = toMinutes(actualIn);
-      const actualOutMin = toMinutes(actualOut);
-      const countedStart = Math.max(actualInMin, requiredInMin);
-      const countedEnd = Math.min(actualOutMin, requiredOutMin);
-      const scheduledWindowMinutes = Math.max(0, countedEnd - countedStart);
-      const actualBreakMinutes = existing.breakOut
-        ? existing.breakIn
-          ? existing.actualBreakMinutes || calculateMinutesBetween(existing.breakOut.slice(0, 5), existing.breakIn.slice(0, 5))
-          : calculateMinutesBetween(existing.breakOut.slice(0, 5), actualOut)
-        : 0;
+      if (existing.timeOut) return { success: false, message: 'Time Out has already been recorded for today.' };
+      const reqIn = activeSchedule?.requiredTimeIn || weeklySchedule?.requiredTimeIn || '08:00';
+      const reqOut = activeSchedule?.requiredTimeOut || weeklySchedule?.requiredTimeOut || '17:00';
+      const scheduledDay = !!activeSchedule?.enabled;
+      const actualInMin = toMinutes(existing.timeIn);
+      const actualOutMin = toMinutes(timeHHMM);
+      const reqInMin = toMinutes(reqIn);
+      const reqOutMin = toMinutes(reqOut);
+      const outsideTime = !scheduledDay || actualInMin < reqInMin || actualInMin > reqOutMin || actualOutMin < reqInMin;
+      const countedStart = Math.max(actualInMin, reqInMin);
+      const countedEnd = Math.min(actualOutMin, reqOutMin);
+      const windowMinutes = Math.max(0, countedEnd - countedStart);
+      const actualBreakMinutes = existing.breakOut ? (existing.breakIn ? existing.actualBreakMinutes || calculateMinutesBetween(existing.breakOut.slice(0,5), existing.breakIn.slice(0,5)) : calculateMinutesBetween(existing.breakOut.slice(0,5), timeHHMM)) : 0;
       const overBreakMinutes = Math.max(0, actualBreakMinutes - existing.requiredBreakMinutes);
       const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      const totalWorkMins = Math.max(0, scheduledWindowMinutes - actualBreakMinutes);
+      const totalWorkMins = Math.max(0, windowMinutes - actualBreakMinutes);
       const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
-      const undertimeMinutes = Math.max(0, requiredOutMin - actualOutMin);
+      const undertimeMinutes = Math.max(0, reqOutMin - actualOutMin);
       const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-
-      // Calculate Holiday Duty Pay if holiday
-      let holidayDutyPay = 0;
-      if (existing.isHoliday && existing.holidayRateMultiplier && comp) {
-        // Philippine standard holiday duty pay
-        holidayDutyPay = Number(
-          ((comp.dailyRate * (existing.holidayRateMultiplier - 1))).toFixed(2)
-        );
+      const status: AttendanceRecord['status'] = !scheduledDay
+        ? 'outside_scheduled_day'
+        : outsideTime
+        ? 'outside_scheduled_time'
+        : totalWorkHours < 4
+        ? 'incomplete_duty'
+        : 'present';
+      const holidayDutyPay = existing.isHoliday && existing.holidayRateMultiplier && comp ? Number((comp.dailyRate * (existing.holidayRateMultiplier - 1)).toFixed(2)) : 0;
+      setAttendanceRecords((prev) => prev.map((r) => r.id === existing!.id ? { ...r, timeOut: timeStr, actualBreakMinutes, overBreakMinutes, overBreakDeductions, totalWorkHours, undertimeMinutes, undertimeDeductions, holidayDutyPay, status } : r));
+      if (scheduledDay && !outsideTime) {
+        const otEval = evaluateOvertime(timeHHMM, reqOut, systemSettings.minimumOvertimeMinutes, comp || INITIAL_COMPENSATIONS[2]);
+        if (otEval.isEligible && otEval.potentialOvertimeMinutes > 0) {
+          const newOT: OvertimeRecord = { id: `ot_${Date.now()}`, employeeId, businessId: emp.businessId, date: todayStr, requiredTimeOut: reqOut, actualTimeOut: timeHHMM, totalExcessMinutes: otEval.totalExcessMinutes, potentialOvertimeMinutes: otEval.potentialOvertimeMinutes, status: 'pending', calculatedPay: otEval.calculatedPay, rateApplied: comp?.overtimeRateOrMultiplier || 1.25, rateTypeApplied: comp?.overtimeRateType || 'multiplier' };
+          setOvertimeRecords((prev) => [...prev, newOT]);
+        }
       }
-
-      setAttendanceRecords((prev) =>
-        prev.map((r) =>
-          r.id === existing!.id
-            ? {
-                ...r,
-                timeOut: timeStr,
-                actualBreakMinutes,
-                overBreakMinutes,
-                overBreakDeductions,
-                totalWorkHours,
-                undertimeMinutes,
-                undertimeDeductions,
-                holidayDutyPay,
-              }
-            : r
-        )
-      );
-
-      // AUTOMATIC OVERTIME DETECTION:
-      // Compare Actual Time Out with Required Time Out.
-      // Minimum overtime requirement check (default 60m).
-      const reqTimeOut = daySchedule?.requiredTimeOut || sched?.requiredTimeOut || '17:00';
-      const otEval = evaluateOvertime(
-        timeHHMM,
-        reqTimeOut,
-        systemSettings.minimumOvertimeMinutes,
-        comp || INITIAL_COMPENSATIONS[2]
-      );
-
-      if (otEval.isEligible && otEval.potentialOvertimeMinutes > 0) {
-        const newOT: OvertimeRecord = {
-          id: `ot_${Date.now()}`,
-          employeeId,
-          businessId: emp.businessId,
-          date: todayStr,
-          requiredTimeOut: reqTimeOut,
-          actualTimeOut: timeHHMM,
-          totalExcessMinutes: otEval.totalExcessMinutes,
-          potentialOvertimeMinutes: otEval.potentialOvertimeMinutes,
-          status: 'pending', // PENDING SUPER ADMIN APPROVAL
-          calculatedPay: otEval.calculatedPay,
-          rateApplied: comp?.overtimeRateOrMultiplier || 1.25,
-          rateTypeApplied: comp?.overtimeRateType || 'multiplier',
-        };
-
-        setOvertimeRecords((prev) => [...prev, newOT]);
-
-        // Push notifications
-        pushNotification({
-          targetRole: 'super_admin',
-          title: 'New Overtime for Review',
-          message: `${emp.fullName} (${emp.position}) recorded ${otEval.potentialOvertimeMinutes} mins potential overtime.`,
-          type: 'warning',
-          link: 'overtime',
-        });
-
-        pushNotification({
-          targetUserId: employeeId,
-          title: 'Overtime Submitted for Review',
-          message: `Detected ${otEval.potentialOvertimeMinutes} mins overtime. Record submitted to Super Admin for approval.`,
-          type: 'info',
-        });
-      }
-
-      return {
-        success: true,
-        message: `Time Out recorded at ${timeStr} (${totalWorkHours} regular hrs counted)${undertimeMinutes > 0 ? `, ${undertimeMinutes} mins undertime (₱${undertimeDeductions.toFixed(2)} deduction)` : ''}. ${
-          otEval.isEligible
-            ? `Potential overtime of ${otEval.potentialOvertimeMinutes} mins detected and sent for Super Admin approval.`
-            : 'Shift completed.'
-        }`,
-      };
+      if (status === 'incomplete_duty') return { success: true, message: `Time Out recorded. ${totalWorkHours} valid hours rendered; below the 4-hour minimum, so this day is not counted as PRESENT for payroll.` };
+      if (status === 'outside_scheduled_day' || status === 'outside_scheduled_time') return { success: true, message: 'Attendance was recorded but does not qualify as payable regular attendance.' };
+      return { success: true, message: `Time Out recorded at ${timeStr} (${totalWorkHours} valid scheduled hours). Shift completed.` };
     }
-
     return { success: false, message: 'Invalid attendance action.' };
   };
 
@@ -951,6 +886,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       `Status: ${updates.status || current.status}, Late: ${updates.lateMinutes ?? current.lateMinutes}m`,
       `Employee: ${emp?.fullName}, Date: ${current.date}. Reason: ${reason}`
     );
+  };
+
+  const deleteAttendance = (recordId: string, reason: string) => {
+    const current = attendanceRecords.find((record) => record.id === recordId);
+    if (!current) return { success: false, message: 'Attendance record not found.' };
+    if (!reason.trim()) return { success: false, message: 'A deletion reason is required.' };
+    const emp = employees.find((employee) => employee.id === current.employeeId);
+    if (currentUser.role === 'employee') return { success: false, message: 'Employees cannot delete attendance records.' };
+    if (currentUser.role === 'business_admin' && currentUser.businessId !== current.businessId) return { success: false, message: 'You can only delete attendance within your authorized business.' };
+    setAttendanceRecords((prev) => prev.filter((record) => record.id !== recordId));
+    setOvertimeRecords((prev) => prev.filter((record) => !(record.employeeId === current.employeeId && record.date === current.date)));
+    logAudit(
+      'Delete Attendance',
+      'attendance',
+      JSON.stringify({ id: current.id, employee: emp?.fullName, date: current.date, timeIn: current.timeIn, breakOut: current.breakOut, breakIn: current.breakIn, timeOut: current.timeOut }),
+      'Deleted',
+      `Deleted by ${currentUser.fullName}. Reason: ${reason}`
+    );
+    return { success: true, message: 'Attendance record deleted and preserved in the audit trail.' };
   };
 
   // Overtime Approvals
@@ -1300,6 +1254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmployees(INITIAL_EMPLOYEES);
     setCompensations(INITIAL_COMPENSATIONS);
     setSchedules(INITIAL_SCHEDULES);
+    setDateSchedules([]);
     setAttendanceRecords(INITIAL_ATTENDANCE_RECORDS);
     setOvertimeRecords(INITIAL_OVERTIME_RECORDS);
     setHolidays(INITIAL_HOLIDAYS);
@@ -1323,6 +1278,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         businesses,
         compensations,
         schedules,
+        dateSchedules,
         attendanceRecords,
         overtimeRecords,
         holidays,
@@ -1341,6 +1297,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addBusiness,
         updateBusiness,
         toggleBusinessStatus,
+        deleteBusiness,
         addEmployee,
         updateEmployee,
         completeEmployeeOnboarding,
@@ -1349,8 +1306,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteEmployee,
         updateCompensation,
         updateSchedule,
+        saveDateSchedules,
         recordAttendance,
         adjustAttendance,
+        deleteAttendance,
         reviewOvertime,
         updateMinimumOvertime,
         addHoliday,

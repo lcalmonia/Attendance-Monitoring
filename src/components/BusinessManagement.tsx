@@ -13,11 +13,12 @@ import {
   Clock,
   X,
   ShieldCheck,
+  Trash2,
 } from 'lucide-react';
 import { Business } from '../types';
 
 export const BusinessManagement: React.FC = () => {
-  const { businesses, employees, users, addBusiness, updateBusiness, currentUser } = useApp();
+  const { businesses, employees, users, addBusiness, updateBusiness, deleteBusiness, currentUser } = useApp();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingBiz, setEditingBiz] = useState<Business | null>(null);
@@ -30,6 +31,12 @@ export const BusinessManagement: React.FC = () => {
   const [contactNumber, setContactNumber] = useState('');
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
+
+  const handleDeleteBusiness = (biz: Business) => {
+    if (!window.confirm(`Delete ${biz.name}? This is only allowed when no employees or historical records depend on it.`)) return;
+    const result = deleteBusiness(biz.id);
+    alert(result.message);
+  };
 
   const openEditModal = (b: Business) => {
     setEditingBiz(b);
@@ -179,12 +186,21 @@ export const BusinessManagement: React.FC = () => {
                 </div>
 
                 {currentUser.role === 'super_admin' && (
+                  <div className="flex items-center gap-2">
                   <button
                     onClick={() => openEditModal(biz)}
                     className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1 transition-colors"
                   >
                     <Edit2 className="w-3 h-3" /> Edit
                   </button>
+                  <button
+                    onClick={() => handleDeleteBusiness(biz)}
+                    className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/20"
+                    title="Delete business"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
                 )}
               </div>
             </div>
