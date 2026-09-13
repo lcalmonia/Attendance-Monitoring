@@ -14,6 +14,7 @@ import {
   FileCheck,
   ShieldCheck,
   HelpCircle,
+  Trash2,
 } from 'lucide-react';
 import { AttendanceRecord, AttendanceStatus } from '../types';
 import { getScheduleForDay } from '../services/payrollEngine';
@@ -26,6 +27,7 @@ export const AttendanceManagement: React.FC = () => {
     schedules,
     payrollPeriods,
     adjustAttendance,
+    deleteAttendance,
     currentUser,
   } = useApp();
 
@@ -80,6 +82,14 @@ export const AttendanceManagement: React.FC = () => {
 
     return true;
   });
+
+  const handleDeleteAttendance = (rec: AttendanceRecord) => {
+    const reason = window.prompt('Reason for deleting this attendance record (required):');
+    if (!reason || !reason.trim()) return;
+    if (!window.confirm('Delete this attendance record? The original details will remain in the audit trail.')) return;
+    const result = deleteAttendance(rec.id, reason.trim());
+    alert(result.message);
+  };
 
   const openAdjustModal = (rec: AttendanceRecord) => {
     setEditingRecord(rec);
@@ -234,7 +244,7 @@ export const AttendanceManagement: React.FC = () => {
                 <th className="py-3.5 px-2">Break Dur.</th>
                 <th className="py-3.5 px-2">Work Hrs</th>
                 <th className="py-3.5 px-3">Status</th>
-                {currentUser.role === 'super_admin' && <th className="py-3.5 px-3 text-right">Actions</th>}
+                {currentUser.role !== 'employee' && <th className="py-3.5 px-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
@@ -369,15 +379,26 @@ export const AttendanceManagement: React.FC = () => {
                       </td>
 
                       {/* Action */}
-                      {currentUser.role === 'super_admin' && (
+                      {currentUser.role !== 'employee' && (
                         <td className="py-3 px-3 text-right">
-                          <button
-                            onClick={() => openAdjustModal(rec)}
-                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                            title="Adjust Attendance Record"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            {currentUser.role === 'super_admin' && (
+                              <button
+                                onClick={() => openAdjustModal(rec)}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                                title="Adjust Attendance Record"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteAttendance(rec)}
+                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-300 transition-colors"
+                              title="Delete Attendance Record"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
