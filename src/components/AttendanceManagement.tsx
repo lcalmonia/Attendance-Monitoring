@@ -462,6 +462,9 @@ export const AttendanceManagement: React.FC = () => {
                   <option value="sick_leave">Sick Leave</option>
                   <option value="vacation_leave">Vacation Leave</option>
                   <option value="emergency_leave">Emergency Leave</option>
+                  <option value="incomplete_duty">Incomplete Duty (Below 4 Hours)</option>
+                  <option value="outside_scheduled_day">Outside Scheduled Day</option>
+                  <option value="outside_scheduled_time">Outside Scheduled Time</option>
                   <option value="other">Other</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
