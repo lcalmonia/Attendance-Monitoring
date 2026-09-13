@@ -75,6 +75,7 @@ interface AppContextType {
   login: (emailOrEmpId: string) => boolean;
   switchUser: (userId: string) => void;
   logout: () => void;
+  updateCurrentUserProfile: (updates: Pick<User, 'fullName' | 'email' | 'mobileNumber'> & { position?: string }) => void;
 
   // Business actions
   addBusiness: (biz: Omit<Business, 'id' | 'createdAt'>) => void;
@@ -376,6 +377,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const logout = () => {
     // Default back to Joshua or show login
     setCurrentUser(users[2] || users[0]);
+  };
+
+  const updateCurrentUserProfile = (updates: Pick<User, 'fullName' | 'email' | 'mobileNumber'> & { position?: string }) => {
+    if (currentUser.role !== 'super_admin') return;
+
+    const userUpdates = {
+      fullName: updates.fullName.trim(),
+      email: updates.email.trim(),
+      mobileNumber: updates.mobileNumber.trim(),
+    };
+
+    setUsers((prev) => prev.map((user) => user.id === currentUser.id ? { ...user, ...userUpdates } : user));
+    setEmployees((prev) => prev.map((employee) => employee.id === currentUser.id
+      ? { ...employee, ...userUpdates, position: updates.position?.trim() || employee.position }
+      : employee
+    ));
+    setCurrentUser((prev) => ({ ...prev, ...userUpdates }));
+    logAudit(
+      'Update Super Admin Profile',
+      'system',
+      currentUser.fullName,
+      userUpdates.fullName,
+      'Updated profile details and position: ' + (updates.position?.trim() || 'Unchanged')
+    );
   };
 
   // Business Actions
@@ -1294,6 +1319,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         login,
         switchUser,
         logout,
+        updateCurrentUserProfile,
         addBusiness,
         updateBusiness,
         toggleBusinessStatus,

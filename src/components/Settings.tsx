@@ -12,10 +12,11 @@ import {
   Upload,
   Image as ImageIcon,
   Trash2,
+  UserRound,
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const { systemSettings, updateSettings, resetDemoData, currentUser } = useApp();
+  const { systemSettings, updateSettings, resetDemoData, currentUser, employees, updateCurrentUserProfile } = useApp();
 
   const [minOT, setMinOT] = useState(systemSettings.minimumOvertimeMinutes);
   const [cctvText, setCctvText] = useState(systemSettings.cctvNoticeText);
@@ -23,11 +24,23 @@ export const Settings: React.FC = () => {
   const [isSaved, setIsSaved] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState(systemSettings.appLogoDataUrl || '');
   const [logoError, setLogoError] = useState('');
+  const currentEmployee = employees.find((employee) => employee.id === currentUser.id);
+  const [profileName, setProfileName] = useState(currentUser.fullName);
+  const [profileEmail, setProfileEmail] = useState(currentUser.email);
+  const [profileMobile, setProfileMobile] = useState(currentUser.mobileNumber);
+  const [profilePosition, setProfilePosition] = useState(currentEmployee?.position || 'Super Admin');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setLogoDataUrl(systemSettings.appLogoDataUrl || '');
   }, [systemSettings.appLogoDataUrl]);
+
+  useEffect(() => {
+    setProfileName(currentUser.fullName);
+    setProfileEmail(currentUser.email);
+    setProfileMobile(currentUser.mobileNumber);
+    setProfilePosition(currentEmployee?.position || 'Super Admin');
+  }, [currentUser.fullName, currentUser.email, currentUser.mobileNumber, currentEmployee?.position]);
 
   const handleLogoUpload = (file?: File) => {
     if (!file) return;
@@ -48,12 +61,20 @@ export const Settings: React.FC = () => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    updateSystemSettings({
+    updateSettings({
       minimumOvertimeMinutes: Number(minOT),
       cctvNoticeText: cctvText,
       requireCCTVNotice: requireCCTV,
       appLogoDataUrl: logoDataUrl || undefined,
       appLogoUpdatedAt: logoDataUrl ? new Date().toISOString() : undefined,
+      payrollSignatoryName: profileName.trim(),
+      payrollSignatoryPosition: profilePosition.trim(),
+    });
+    updateCurrentUserProfile({
+      fullName: profileName,
+      email: profileEmail,
+      mobileNumber: profileMobile,
+      position: profilePosition,
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
@@ -91,6 +112,40 @@ export const Settings: React.FC = () => {
 
       {/* Settings Form */}
       <form onSubmit={handleSave} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-white shadow-sm space-y-6">
+        {/* Super Admin Profile */}
+        {currentUser.role === 'super_admin' && (
+          <div className="space-y-4 pb-6 border-b border-slate-800">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <UserRound className="w-4 h-4 text-emerald-400" />
+              Super Admin Profile & Payroll Signatory
+            </h3>
+            <p className="text-xs text-slate-400">
+              Update your Super Admin details. Your name and position will also be used as the authorized signatory on employee payslips.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Full Name</label>
+                <input required value={profileName} onChange={(e) => setProfileName(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Position / Title</label>
+                <input required value={profilePosition} onChange={(e) => setProfilePosition(e.target.value)} placeholder="e.g. President / Super Admin" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Email Address</label>
+                <input type="email" required value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Mobile Number</label>
+                <input required value={profileMobile} onChange={(e) => setProfileMobile(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white" />
+              </div>
+            </div>
+            <p className="text-[11px] text-emerald-300/80">
+              The configured name and position replace the incorrect hardcoded payslip signatory.
+            </p>
+          </div>
+        )}
+
         {/* Overtime Policy */}
         <div className="space-y-3 pb-6 border-b border-slate-800">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">

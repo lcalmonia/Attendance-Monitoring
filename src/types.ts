@@ -379,4 +379,8 @@ export interface SystemSettings {
   /** Custom logo used for browser favicon and installed app/shortcut icon. */
   appLogoDataUrl?: string;
   appLogoUpdatedAt?: string;
+  /** Name shown as the authorized payroll signatory on employee payslips. */
+  payrollSignatoryName?: string;
+  /** Position/title shown below the authorized payroll signatory. */
+  payrollSignatoryPosition?: string;
 }
