@@ -9,11 +9,8 @@ import {
   KeyRound,
   CheckCircle,
   XCircle,
-  Building,
   X,
   Search,
-  Check,
-  ShieldAlert,
   Trash2,
 } from 'lucide-react';
 import { Employee, Compensation, EmploymentStatus, AccountStatus, UserRole } from '../types';
@@ -25,7 +22,6 @@ export const EmployeeManagement: React.FC = () => {
     users,
     businesses,
     compensations,
-    schedules,
     deductionTypes,
     employeeDeductions,
     addEmployee,
@@ -458,7 +454,7 @@ export const EmployeeManagement: React.FC = () => {
                           {/* Toggle Active/Inactive */}
                           <button
                             onClick={() => toggleAccountStatus(emp.id)}
-                            className={`p-1.5 rounded-lg border ${
+                            className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                               emp.accountStatus === 'active'
                                 ? 'bg-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/40'
                                 : 'bg-emerald-600/20 text-emerald-300 border-emerald-500/30'
