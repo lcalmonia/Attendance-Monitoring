@@ -10,7 +10,8 @@ import {
   PayrollPeriod,
   PayrollRecord,
   Employee,
-  DailySchedule
+  DailySchedule,
+  DateSchedule
 } from '../types';
 
 /**
@@ -180,6 +181,9 @@ export function evaluateIncentives(
   programs: IncentiveProgram[],
   employee: Employee,
   records: AttendanceRecord[]
+,
+  scheduledDutyDates: string[] = [],
+  asOfDate?: string
 ): IncentiveEvaluation[] {
   return programs
     .filter((p) => p.status === 'active')
@@ -222,12 +226,20 @@ export function evaluateIncentives(
         }
       }
 
-      // Check condition: minDaysPresent
-      if (prog.conditions.minDaysPresent && prog.conditions.minDaysPresent > 0) {
-        const presentCount = records.filter((r) => r.status === 'present').length;
-        if (presentCount < prog.conditions.minDaysPresent) {
+      // Perfect-attendance eligibility follows the employee's actual required duty schedule,
+      // not an arbitrary minimum number of days. Only duty dates that have already occurred
+      // are evaluated for an in-progress payroll period.
+      if (prog.conditions.requireNoAbsence && scheduledDutyDates.length > 0) {
+        const evaluatedDutyDates = asOfDate
+          ? scheduledDutyDates.filter((date) => date <= asOfDate)
+          : scheduledDutyDates;
+        const missedDutyDates = evaluatedDutyDates.filter((date) => {
+          const record = records.find((r) => r.date === date);
+          return record?.status !== 'present';
+        });
+        if (missedDutyDates.length > 0) {
           isQualified = false;
-          reasons.push(`Present for ${presentCount} days (minimum required: ${prog.conditions.minDaysPresent})`);
+          reasons.push(`${missedDutyDates.length} required scheduled duty day(s) not completed`);
         }
       }
 
@@ -256,6 +268,7 @@ export function calculateEmployeePayroll({
   holidays,
   incentivePrograms,
   employeeDeductions,
+  dateSchedules,
 }: {
   employee: Employee;
   businessName: string;
@@ -267,6 +280,7 @@ export function calculateEmployeePayroll({
   holidays: Holiday[];
   incentivePrograms: IncentiveProgram[];
   employeeDeductions: EmployeeDeduction[];
+  dateSchedules?: DateSchedule[];
 }): PayrollRecord {
   // 1. Filter attendance for this employee and period
   const periodAttendance = attendanceRecords.filter(
@@ -323,8 +337,44 @@ export function calculateEmployeePayroll({
   });
   holidayDutyPay = Number(holidayDutyPay.toFixed(2));
 
-  // Incentives
-  const evaluatedIncentives = evaluateIncentives(incentivePrograms, employee, periodAttendance);
+  // Incentives: perfect attendance is evaluated against the employee's actual
+  // required duty dates. Date-specific payroll-period schedules take priority,
+  // with the weekly schedule used as a fallback.
+  const explicitPeriodSchedules = (dateSchedules || []).filter(
+    (entry) =>
+      entry.employeeId === employee.id &&
+      entry.payrollPeriodId === period.id
+  );
+  let scheduledDutyDates = explicitPeriodSchedules
+    .filter((entry) => entry.enabled)
+    .map((entry) => entry.date);
+
+  if (explicitPeriodSchedules.length === 0) {
+    const cursor = new Date(period.startDate + 'T12:00:00');
+    const endDate = new Date(period.endDate + 'T12:00:00');
+    while (cursor <= endDate) {
+      const daily = getScheduleForDay(schedule, cursor.getDay());
+      if (daily.enabled) {
+        scheduledDutyDates.push(cursor.toISOString().slice(0, 10));
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  const today = new Date();
+  const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const incentiveAsOfDate =
+    period.status === 'finalized' || period.status === 'paid'
+      ? period.endDate
+      : todayString;
+
+  const evaluatedIncentives = evaluateIncentives(
+    incentivePrograms,
+    employee,
+    periodAttendance,
+    scheduledDutyDates,
+    incentiveAsOfDate
+  );
   const incentivesPay = Number(
     evaluatedIncentives.reduce((acc, inc) => acc + inc.amountGranted, 0).toFixed(2)
   );
@@ -469,9 +519,17 @@ export function calculateEmployeePayroll({
  */
 export function evaluateIncentiveQualification(
   program: IncentiveProgram,
-  records: AttendanceRecord[]
+  records: AttendanceRecord[],
+  scheduledDutyDates: string[] = [],
+  asOfDate?: string
 ): { isQualified: boolean; reason?: string } {
-  const res = evaluateIncentives([program], { id: 'temp', businessId: program.applicableBusinessId || '' } as any, records);
+  const res = evaluateIncentives(
+    [program],
+    { id: 'temp', businessId: program.applicableBusinessId || '' } as any,
+    records,
+    scheduledDutyDates,
+    asOfDate
+  );
   return {
     isQualified: res[0]?.isQualified ?? false,
     reason: res[0]?.disqualificationReason,
