@@ -33,6 +33,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setAc
       { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { id: 'attendance', label: 'Attendance', icon: Clock },
       { id: 'employees', label: 'Employees', icon: Users },
+      { id: 'schedules', label: 'Schedules', icon: CalendarDays },
       { id: 'businesses', label: 'Businesses', icon: Building2 },
       {
         id: 'overtime',
@@ -52,6 +53,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({ activeTab, setAc
       { id: 'dashboard', label: 'Branch Dashboard', icon: LayoutDashboard },
       { id: 'attendance', label: 'Branch Attendance', icon: Clock },
       { id: 'employees', label: 'Branch Staff', icon: Users },
+      { id: 'schedules', label: 'Staff Schedules', icon: CalendarDays },
       {
         id: 'overtime',
         label: 'Overtime Review',
