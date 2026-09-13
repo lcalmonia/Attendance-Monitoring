@@ -13,7 +13,7 @@ export default async (req: Request) => {
     background_color: "#020617",
     theme_color: "#020617",
     icons: [
-      { src: icon, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+      { src: icon, sizes: "192x192", purpose: "any maskable" },
       { src: icon, sizes: "512x512", type: "image/png", purpose: "any maskable" }
     ]
   }), {
