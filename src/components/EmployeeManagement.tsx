@@ -30,7 +30,6 @@ export const EmployeeManagement: React.FC = () => {
     resetPassword,
     deleteEmployee,
     updateCompensation,
-    updateSchedule,
     assignEmployeeDeduction,
     removeEmployeeDeduction,
     currentUser,
@@ -163,8 +162,6 @@ export const EmployeeManagement: React.FC = () => {
   // Dynamic live rate calculation preview
   const liveRates = calculateRates(editDailyRate, editReqHours);
 
-  // Dynamic schedule metric calculation preview
-  const liveSchedMetrics = calculateScheduleMetrics(editTimeIn, editBreakOut, editBreakIn, editTimeOut);
 
   // Open Compensation Modal
   const openCompModal = (emp: Employee) => {
@@ -261,7 +258,7 @@ export const EmployeeManagement: React.FC = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-black tracking-tight">Employee Directory & Compensation</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Configure employee compensation, work schedules, deduction assignments, and accounts.
+            Configure employee details, compensation, deduction assignments, and accounts. Work schedules are managed in the Schedules tab.
           </p>
         </div>
 
@@ -974,25 +971,6 @@ export const EmployeeManagement: React.FC = () => {
                     </button>
                   </div>
 
-                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] text-slate-400">Duty Schedule</div>
-                      <div className="text-xs font-mono font-bold text-teal-400">
-                        {schedules.find((s) => s.employeeId === editingEmployee.id)?.requiredTimeIn || '08:00'} -{' '}
-                        {schedules.find((s) => s.employeeId === editingEmployee.id)?.requiredTimeOut || '17:00'}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const emp = editingEmployee;
-                        setEditingEmployee(null);
-                        openSchedModal(emp);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-teal-600/20 hover:bg-teal-600/30 text-teal-300 border border-teal-500/30 text-[11px] font-semibold transition-colors"
-                    >
-                      Configure Hours
-                    </button>
                   </div>
                 </div>
               </div>
