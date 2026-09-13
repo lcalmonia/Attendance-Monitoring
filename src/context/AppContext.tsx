@@ -1254,6 +1254,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setEmployees(INITIAL_EMPLOYEES);
     setCompensations(INITIAL_COMPENSATIONS);
     setSchedules(INITIAL_SCHEDULES);
+    setDateSchedules([]);
     setAttendanceRecords(INITIAL_ATTENDANCE_RECORDS);
     setOvertimeRecords(INITIAL_OVERTIME_RECORDS);
     setHolidays(INITIAL_HOLIDAYS);
