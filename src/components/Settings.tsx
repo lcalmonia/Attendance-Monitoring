@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   Sliders,
@@ -9,15 +9,42 @@ import {
   CheckCircle2,
   Building2,
   AlertTriangle,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
-  const { systemSettings, updateSystemSettings, resetToDefaultData, currentUser } = useApp();
+  const { systemSettings, updateSettings, resetDemoData, currentUser } = useApp();
 
   const [minOT, setMinOT] = useState(systemSettings.minimumOvertimeMinutes);
   const [cctvText, setCctvText] = useState(systemSettings.cctvNoticeText);
   const [requireCCTV, setRequireCCTV] = useState(systemSettings.requireCCTVNotice);
   const [isSaved, setIsSaved] = useState(false);
+  const [logoDataUrl, setLogoDataUrl] = useState(systemSettings.appLogoDataUrl || '');
+  const [logoError, setLogoError] = useState('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setLogoDataUrl(systemSettings.appLogoDataUrl || '');
+  }, [systemSettings.appLogoDataUrl]);
+
+  const handleLogoUpload = (file?: File) => {
+    if (!file) return;
+    setLogoError('');
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setLogoError('Please upload a PNG, JPG, or WEBP image.');
+      return;
+    }
+    if (file.size > 1024 * 1024) {
+      setLogoError('Please keep the logo file at 1 MB or below.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setLogoDataUrl(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => setLogoError('Unable to read the selected image.');
+    reader.readAsDataURL(file);
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +52,8 @@ export const Settings: React.FC = () => {
       minimumOvertimeMinutes: Number(minOT),
       cctvNoticeText: cctvText,
       requireCCTVNotice: requireCCTV,
+      appLogoDataUrl: logoDataUrl || undefined,
+      appLogoUpdatedAt: logoDataUrl ? new Date().toISOString() : undefined,
     });
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
@@ -36,7 +65,7 @@ export const Settings: React.FC = () => {
         'Are you sure you want to reset all data back to the initial demo seed? All newly added entries will be reverted.'
       )
     ) {
-      resetToDefaultData();
+      resetDemoData();
     }
   };
 
@@ -83,6 +112,57 @@ export const Settings: React.FC = () => {
               className="w-24 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono text-center font-bold"
             />
             <span className="text-xs text-slate-400">minutes (Default: 60 minutes)</span>
+          </div>
+        </div>
+
+        {/* App Shortcut Logo */}
+        <div className="space-y-3 pb-6 border-b border-slate-800">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-violet-400" />
+            App & Shortcut Logo
+          </h3>
+          <p className="text-xs text-slate-400">
+            Upload a square logo to use as the WorkSphere browser favicon and the thumbnail/icon when users create a shortcut or install the app on supported mobile and desktop browsers.
+          </p>
+
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => handleLogoUpload(e.target.files?.[0])}
+          />
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="w-24 h-24 rounded-2xl bg-slate-950 border border-slate-700 overflow-hidden flex items-center justify-center shrink-0">
+              {logoDataUrl ? (
+                <img src={logoDataUrl} alt="Shortcut logo preview" className="w-full h-full object-cover" />
+              ) : (
+                <Building2 className="w-9 h-9 text-slate-600" />
+              )}
+            </div>
+            <div className="flex-1 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => logoInputRef.current?.click()}
+                  className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold flex items-center gap-2"
+                >
+                  <Upload className="w-4 h-4" /> {logoDataUrl ? 'Replace Logo' : 'Upload Logo'}
+                </button>
+                {logoDataUrl && (
+                  <button
+                    type="button"
+                    onClick={() => { setLogoDataUrl(''); setLogoError(''); if (logoInputRef.current) logoInputRef.current.value = ''; }}
+                    className="px-3.5 py-2 rounded-xl bg-red-600/15 hover:bg-red-600/25 text-red-300 border border-red-500/30 text-xs font-bold flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" /> Remove
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500">Recommended: square PNG or WEBP, at least 512 × 512 pixels, maximum 1 MB.</p>
+              {logoError && <p className="text-xs text-red-300">{logoError}</p>}
+            </div>
           </div>
         </div>
 
