@@ -35,13 +35,45 @@ export const DateScheduleManagement: React.FC = () => {
     if (!employeeId || !period) return;
     const weekly = schedules.find((item) => item.employeeId === employeeId);
     const existing = dateSchedules.filter((item) => item.employeeId === employeeId && item.payrollPeriodId === period.id);
+
+    // Default a new payroll period to the employee's most recent payroll-period
+    // schedule. This keeps recurring weekly patterns (e.g. Mon 8-5, Tue 12-9)
+    // without making the old period's dates the source of truth forever.
+    const priorPeriods = payrollPeriods
+      .filter((item) => item.id !== period.id && item.endDate < period.startDate)
+      .sort((a, b) => b.endDate.localeCompare(a.endDate));
+    const previousPeriod = priorPeriods[0];
+    const previousEntries = previousPeriod
+      ? dateSchedules.filter((item) => item.employeeId === employeeId && item.payrollPeriodId === previousPeriod.id)
+      : [];
+
     setDrafts(dates.map((date) => {
       const saved = existing.find((item) => item.date === date);
       if (saved) {
         const { id, employeeId: _employeeId, payrollPeriodId: _periodId, ...rest } = saved;
         return rest;
       }
+
       const day = new Date(date + 'T12:00:00').getDay();
+      // Use the latest matching weekday from the immediately preceding payroll
+      // period. This makes Sept 16-30 inherit the Sept 1-15 Mon/Tue/etc pattern.
+      const previousSameWeekday = [...previousEntries]
+        .filter((item) => new Date(item.date + 'T12:00:00').getDay() === day)
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+
+      if (previousSameWeekday) {
+        return {
+          date,
+          enabled: previousSameWeekday.enabled,
+          requiredTimeIn: previousSameWeekday.requiredTimeIn,
+          requiredBreakOut: previousSameWeekday.requiredBreakOut,
+          requiredBreakIn: previousSameWeekday.requiredBreakIn,
+          requiredTimeOut: previousSameWeekday.requiredTimeOut,
+          notes: previousSameWeekday.notes || '',
+        };
+      }
+
+      // First payroll period fallback: use the employee's recurring weekly template.
       const fallback = weekly ? getScheduleForDay(weekly, day) : undefined;
       return {
         date,
@@ -71,7 +103,7 @@ export const DateScheduleManagement: React.FC = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2"><CalendarRange className="w-6 h-6 text-blue-400" /><h1 className="text-xl sm:text-2xl font-black">Payroll-Period Employee Schedule</h1></div>
-            <p className="text-sm text-slate-400 mt-1">Create the actual schedule for every date in a cut-off period. Each date can have a different shift or be marked as a day off.</p>
+            <p className="text-sm text-slate-400 mt-1">Create the actual schedule for every date in a cut-off period. A new payroll period automatically starts with the employee's matching weekday schedule from the previous payroll period (for example, Monday 8:00–5:00 and Tuesday 12:00–9:00).</p>
           </div>
           <button onClick={save} className="w-full md:w-auto inline-flex justify-center items-center gap-2 px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold"><Save className="w-4 h-4" />Save Period Schedule</button>
         </div>
