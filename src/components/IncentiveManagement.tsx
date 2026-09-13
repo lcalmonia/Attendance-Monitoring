@@ -45,6 +45,24 @@ export const IncentiveManagement: React.FC = () => {
 
   const activePeriod = payrollPeriods.find((p) => p.status === 'projected') || payrollPeriods[1];
 
+  const currentEmployee = employees.find((employee) => employee.id === currentUser.id);
+  const isEmployeePortal = currentUser.role === 'employee';
+
+  // Employee users must only see incentive programs that are active and applicable
+  // to their business and (when configured) their specific employee account.
+  const employeeVisiblePrograms = incentivePrograms.filter((program) => {
+    if (!currentEmployee) return false;
+    if (program.status !== 'active') return false;
+    if (program.applicableBusinessId && program.applicableBusinessId !== currentEmployee.businessId) return false;
+    if (program.applicableEmployeeIds?.length && !program.applicableEmployeeIds.includes(currentEmployee.id)) return false;
+    return true;
+  });
+
+  const displayedPrograms = isEmployeePortal ? employeeVisiblePrograms : incentivePrograms;
+  const auditEmployees = isEmployeePortal
+    ? (currentEmployee ? [currentEmployee] : [])
+    : employees;
+
   const handleOpenAdd = () => {
     setEditingIncentive(null);
     setName('');
@@ -140,7 +158,7 @@ export const IncentiveManagement: React.FC = () => {
 
       {/* Program Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {incentivePrograms.map((prog) => {
+        {displayedPrograms.map((prog) => {
           const biz = businesses.find((b) => b.id === prog.applicableBusinessId);
           return (
             <div
@@ -272,7 +290,7 @@ export const IncentiveManagement: React.FC = () => {
             </p>
           </div>
           <span className="text-xs text-blue-400 font-mono">
-            {employees.length} Employees Evaluated
+            {auditEmployees.length} {isEmployeePortal ? 'Employee' : 'Employees'} Evaluated
           </span>
         </div>
 
@@ -291,11 +309,16 @@ export const IncentiveManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
-              {employees.map((emp) => {
+              {auditEmployees.map((emp) => {
                 const biz = businesses.find((b) => b.id === emp.businessId);
 
-                // Check first active program
-                const prog = incentivePrograms[0];
+                // Only evaluate active programs that are applicable to this employee.
+                const applicablePrograms = incentivePrograms.filter((program) =>
+                  program.status === 'active' &&
+                  (!program.applicableBusinessId || program.applicableBusinessId === emp.businessId) &&
+                  (!program.applicableEmployeeIds?.length || program.applicableEmployeeIds.includes(emp.id))
+                );
+                const prog = applicablePrograms[0];
                 const empAtt = attendanceRecords.filter(
                   (r) =>
                     r.employeeId === emp.id &&
@@ -305,7 +328,7 @@ export const IncentiveManagement: React.FC = () => {
 
                 const evalResult = prog
                   ? evaluateIncentiveQualification(prog, empAtt)
-                  : { isQualified: false, reason: 'No active program' };
+                  : { isQualified: false, reason: 'No active incentive program applicable to this employee' };
 
                 const totalLateMins = empAtt.reduce((acc, r) => acc + r.lateMinutes, 0);
                 const daysPresent = empAtt.filter((r) => r.status === 'present').length;
