@@ -376,4 +376,7 @@ export interface SystemSettings {
   requireAuditReasonForAdjustments: boolean;
   cctvNoticeText: string;
   requireCCTVNotice?: boolean;
+  /** Custom logo used for browser favicon and installed app/shortcut icon. */
+  appLogoDataUrl?: string;
+  appLogoUpdatedAt?: string;
 }
