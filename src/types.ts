@@ -228,6 +228,7 @@ export interface IncentiveProgram {
     requireNoLate: boolean;
     requireNoAbsence: boolean;
     disqualifyOnValidAbsence: boolean;
+    /** Legacy threshold. Prefer scheduled-duty attendance for perfect attendance programs. */
     minDaysPresent?: number;
   };
   applicableBusinessId?: string; // empty means all businesses
