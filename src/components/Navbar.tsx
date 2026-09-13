@@ -61,15 +61,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onLogou
 
       {/* Main Navbar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between gap-2 h-16 min-w-0">
           {/* Brand Logo & Name */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white font-black text-xl shadow-inner border border-blue-400/30">
               W
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold tracking-tight text-white">WorkSphere</span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-base sm:text-lg font-bold tracking-tight text-white truncate">WorkSphere</span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-200 border border-blue-700/50 font-medium">
                   CV Group
                 </span>
@@ -85,7 +85,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onLogou
           </div>
 
           {/* Right Action Icons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 sm:gap-3 shrink-0">
             {/* Notification Bell */}
             <div className="relative">
               <button
