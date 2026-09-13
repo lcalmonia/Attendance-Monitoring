@@ -939,39 +939,32 @@ export const EmployeeManagement: React.FC = () => {
                 </div>
               </div>
 
-              {/* Associated Compensation & Schedule Quick Overview */}
+              {/* Associated Compensation Quick Overview */}
               <div className="pt-3 border-t border-slate-800">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                    Associated Compensation & Schedule
+                    Associated Compensation
                   </span>
-                  <span className="text-[10px] text-slate-500">Managed via dedicated audit-tracked modules</span>
+                  <span className="text-[10px] text-slate-500">Work schedules are managed in the Schedules tab</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
-                    <div>
-                      <div className="text-[10px] text-slate-400">Current Daily Rate</div>
-                      <div className="text-xs font-mono font-bold text-emerald-400">
-                        ₱
-                        {compensations
-                          .find((c) => c.employeeId === editingEmployee.id)
-                          ?.dailyRate.toFixed(2) || '0.00'}
-                      </div>
+                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] text-slate-400">Current Daily Rate</div>
+                    <div className="text-xs font-mono font-bold text-emerald-400">
+                      ₱{compensations.find((c) => c.employeeId === editingEmployee.id)?.dailyRate.toFixed(2) || '0.00'}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const emp = editingEmployee;
-                        setEditingEmployee(null);
-                        openCompModal(emp);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[11px] font-semibold transition-colors"
-                    >
-                      Configure Pay
-                    </button>
                   </div>
-
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const emp = editingEmployee;
+                      setEditingEmployee(null);
+                      openCompModal(emp);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[11px] font-semibold transition-colors"
+                  >
+                    Configure Pay
+                  </button>
                 </div>
               </div>
 
