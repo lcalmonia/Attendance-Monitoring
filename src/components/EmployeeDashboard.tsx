@@ -124,6 +124,17 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
       })
     : null;
 
+  // Employee portal must only expose incentives that are active and applicable to this employee.
+  const visibleIncentives = (livePayroll?.incentivesList || []).filter((inc) =>
+    incentivePrograms.some(
+      (program) =>
+        program.status === 'active' &&
+        (!program.applicableBusinessId || program.applicableBusinessId === employee?.businessId) &&
+        (!program.applicableEmployeeIds?.length || program.applicableEmployeeIds.includes(currentUser.id)) &&
+        program.name === inc.name
+    )
+  );
+
   // Period attendance metrics
   const periodAttendance = attendanceRecords.filter(
     (r) =>
@@ -521,13 +532,6 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
                 ))}
               </div>
 
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs space-y-2">
-                <div className="flex justify-between"><span className="text-slate-400">Time In</span><span className="font-mono text-white">{schedule?.requiredTimeIn || '—'}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Break Out</span><span className="font-mono text-white">{schedule?.requiredBreakOut || '—'}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Break In</span><span className="font-mono text-white">{schedule?.requiredBreakIn || '—'}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Time Out</span><span className="font-mono text-white">{schedule?.requiredTimeOut || '—'}</span></div>
-                <div className="pt-2 mt-2 border-t border-slate-800 flex justify-between font-semibold text-emerald-400"><span>Net Working Hours</span><span>{schedule?.netRequiredWorkingHours || 0} hrs/day</span></div>
-              </div>
             </div>
           </div>
 
@@ -614,9 +618,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
             </div>
 
             {/* List incentives */}
-            {livePayroll?.incentivesList && livePayroll.incentivesList.length > 0 && (
+            {visibleIncentives.length > 0 && (
               <div className="pt-2 border-t border-slate-900 space-y-1">
-                {livePayroll.incentivesList.map((inc, i) => (
+                {visibleIncentives.map((inc, i) => (
                   <div key={i} className="flex justify-between text-[11px]">
                     <span className="text-slate-400 flex items-center gap-1">
                       {inc.isQualified ? (
@@ -781,8 +785,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
           </div>
 
           <div className="divide-y divide-slate-800/70 mt-3 max-h-64 overflow-y-auto">
-            {livePayroll?.incentivesList && livePayroll.incentivesList.length > 0 ? (
-              livePayroll.incentivesList.map((inc, i) => (
+            {visibleIncentives.length > 0 ? (
+              visibleIncentives.map((inc, i) => (
                 <div key={i} className="py-3 text-xs space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-white">{inc.name}</span>
