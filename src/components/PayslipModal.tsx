@@ -1,5 +1,6 @@
 import React from 'react';
 import { PayrollRecord } from '../types';
+import { useApp } from '../context/AppContext';
 import { Printer, X, ShieldCheck, Building2, CheckCircle2 } from 'lucide-react';
 
 interface PayslipModalProps {
@@ -8,6 +9,19 @@ interface PayslipModalProps {
 }
 
 export const PayslipModal: React.FC<PayslipModalProps> = ({ record, onClose }) => {
+  const { systemSettings, users, employees } = useApp();
+  const configuredSignatory = users.find((user) => user.role === 'super_admin' && user.status === 'active')
+    || users.find((user) => user.role === 'super_admin');
+  const signatoryEmployee = configuredSignatory
+    ? employees.find((employee) => employee.id === configuredSignatory.id)
+    : undefined;
+  const signatoryName = systemSettings.payrollSignatoryName?.trim()
+    || configuredSignatory?.fullName
+    || 'Authorized Payroll Signatory';
+  const signatoryPosition = systemSettings.payrollSignatoryPosition?.trim()
+    || signatoryEmployee?.position
+    || 'Super Admin';
+
   const handlePrint = () => {
     window.print();
   };
@@ -189,8 +203,8 @@ export const PayslipModal: React.FC<PayslipModalProps> = ({ record, onClose }) =
           <div className="pt-6 grid grid-cols-2 gap-8 text-xs text-slate-500 border-t border-slate-200">
             <div className="text-center">
               <div className="h-10 border-b border-slate-400 mx-auto w-48" />
-              <p className="font-semibold text-slate-900 mt-1">Carlos Valderama</p>
-              <p className="text-[10px]">Super Admin / President, CV Group</p>
+              <p className="font-semibold text-slate-900 mt-1">{signatoryName}</p>
+              <p className="text-[10px]">{signatoryPosition}</p>
             </div>
             <div className="text-center">
               <div className="h-10 border-b border-slate-400 mx-auto w-48" />
