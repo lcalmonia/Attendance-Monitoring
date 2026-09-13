@@ -34,6 +34,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
     businesses,
     compensations,
     schedules,
+    dateSchedules,
     attendanceRecords,
     overtimeRecords,
     holidays,
@@ -66,7 +67,8 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   const todayRecord = attendanceRecords.find(
     (r) => r.employeeId === currentUser.id && r.date === todayStr
   );
-  const todaySchedule = schedule ? getScheduleForDay(schedule, currentTime.getDay()) : undefined;
+  const activePeriodForToday = payrollPeriods.find((p) => todayStr >= p.startDate && todayStr <= p.endDate);
+  const todaySchedule = dateSchedules.find((entry) => entry.employeeId === currentUser.id && entry.date === todayStr && (!activePeriodForToday || entry.payrollPeriodId === activePeriodForToday.id)) || (schedule ? getScheduleForDay(schedule, currentTime.getDay()) : undefined);
 
   // Active current period (Sept 1-15, 2026)
   const activePeriod =
@@ -74,31 +76,32 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
     payrollPeriods[1] ||
     payrollPeriods[0];
 
-  // Work dates the employee is scheduled to report during the active cut-off.
+  // Date-specific payroll-period schedules are authoritative. Weekly schedules are used only as a fallback.
   const cutoffScheduleDates = (() => {
-    if (!activePeriod || !schedule) return [];
+    if (!activePeriod) return [];
+    const saved = dateSchedules
+      .filter((entry) => entry.employeeId === currentUser.id && entry.payrollPeriodId === activePeriod.id)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (saved.length > 0) {
+      return saved.filter((entry) => entry.enabled).map((entry) => ({
+        date: entry.date,
+        dayLabel: new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+        holidayName: holidays.find((item) => item.date === entry.date)?.name,
+        timeIn: entry.requiredTimeIn,
+        breakOut: entry.requiredBreakOut,
+        breakIn: entry.requiredBreakIn,
+        timeOut: entry.requiredTimeOut,
+      }));
+    }
+    if (!schedule) return [];
     const result: Array<{ date: string; dayLabel: string; holidayName?: string; timeIn: string; breakOut: string; breakIn: string; timeOut: string }> = [];
-    const cursor = new Date(`${activePeriod.startDate}T00:00:00`);
-    const end = new Date(`${activePeriod.endDate}T00:00:00`);
-
-    while (cursor <= end) {
+    const cursor = new Date(activePeriod.startDate + 'T12:00:00');
+    const endDate = new Date(activePeriod.endDate + 'T12:00:00');
+    while (cursor <= endDate) {
       const daily = getScheduleForDay(schedule, cursor.getDay());
       if (daily.enabled) {
-        const date = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
-        const holiday = holidays.find((item) => item.date === date);
-        result.push({
-          date,
-          dayLabel: cursor.toLocaleDateString('en-US', {
-            weekday: 'short',
-            month: 'short',
-            day: 'numeric',
-          }),
-          holidayName: holiday?.name,
-          timeIn: daily.requiredTimeIn,
-          breakOut: daily.requiredBreakOut,
-          breakIn: daily.requiredBreakIn,
-          timeOut: daily.requiredTimeOut,
-        });
+        const date = cursor.toISOString().slice(0, 10);
+        result.push({ date, dayLabel: cursor.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }), holidayName: holidays.find((item) => item.date === date)?.name, timeIn: daily.requiredTimeIn, breakOut: daily.requiredBreakOut, breakIn: daily.requiredBreakIn, timeOut: daily.requiredTimeOut });
       }
       cursor.setDate(cursor.getDate() + 1);
     }
