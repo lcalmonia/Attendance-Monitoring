@@ -6,6 +6,7 @@ import { EmployeeDashboard } from './components/EmployeeDashboard';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { AttendanceManagement } from './components/AttendanceManagement';
 import { EmployeeManagement } from './components/EmployeeManagement';
+import { DateScheduleManagement } from './components/DateScheduleManagement';
 import { BusinessManagement } from './components/BusinessManagement';
 import { OvertimeManagement } from './components/OvertimeManagement';
 import { HolidayManagement } from './components/HolidayManagement';
@@ -38,6 +39,7 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         {activeTab === 'expected_salary' && <EmployeeDashboard view="salary" />}
         {activeTab === 'attendance' && <AttendanceManagement />}
         {activeTab === 'employees' && <EmployeeManagement />}
+        {activeTab === 'schedules' && <DateScheduleManagement />}
         {activeTab === 'businesses' && <BusinessManagement />}
         {activeTab === 'overtime' && <OvertimeManagement />}
         {activeTab === 'holidays' && <HolidayManagement />}
