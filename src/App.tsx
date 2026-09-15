@@ -3,6 +3,7 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { NavigationTabs } from './components/NavigationTabs';
 import { EmployeeDashboard } from './components/EmployeeDashboard';
+import { EmployeeUpcomingSchedule } from './components/EmployeeUpcomingSchedule';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { AttendanceManagement } from './components/AttendanceManagement';
 import { EmployeeManagement } from './components/EmployeeManagement';
@@ -36,7 +37,12 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
       <NavigationTabs activeTab={activeTab} setActiveTab={setActiveTab} />
       <main className="flex-1 pb-16">
         {activeTab === 'dashboard' && (currentUser.role === 'employee' ? <EmployeeDashboard view="dashboard" /> : <SuperAdminDashboard setActiveTab={setActiveTab} />)}
-        {activeTab === 'expected_salary' && <EmployeeDashboard view="salary" />}
+        {activeTab === 'expected_salary' && (
+          <>
+            <EmployeeDashboard view="salary" />
+            {currentUser.role === 'employee' && <EmployeeUpcomingSchedule />}
+          </>
+        )}
         {activeTab === 'attendance' && <AttendanceManagement />}
         {activeTab === 'employees' && <EmployeeManagement />}
         {activeTab === 'schedules' && <DateScheduleManagement />}
