@@ -121,6 +121,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
         holidays,
         incentivePrograms,
         employeeDeductions,
+        dateSchedules,
       })
     : null;
 
@@ -852,6 +853,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
                     holidays,
                     incentivePrograms,
                     employeeDeductions,
+                    dateSchedules,
                   })
                 : null;
 

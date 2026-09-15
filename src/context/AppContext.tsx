@@ -1122,6 +1122,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             holidays,
             incentivePrograms,
             employeeDeductions,
+            dateSchedules,
           });
 
           return {
