@@ -81,57 +81,56 @@ export const EmployeeUpcomingSchedule: React.FC = () => {
   })();
 
   return (
-    <section className="bg-slate-900 border border-blue-500/30 rounded-2xl p-5 sm:p-6 shadow-xl text-white">
-      <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-800">
-        <div>
-          <h2 className="text-lg sm:text-xl font-black flex items-center gap-2">
-            <CalendarDays className="w-5 h-5 text-blue-400" />
-            Next Cut-off Schedule
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            {nextPeriod.name} • Your schedule in advance
-          </p>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-6">
+      <section className="bg-slate-900 border border-blue-500/30 rounded-2xl p-5 sm:p-6 shadow-xl text-white">
+        <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 className="text-lg sm:text-xl font-black flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-blue-400" />
+              Next Cut-off Schedule
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400 mt-1">
+              {nextPeriod.name} • Your schedule in advance
+            </p>
+          </div>
+          <ChevronDown className="w-5 h-5 text-blue-400 shrink-0" />
         </div>
-        <ChevronDown className="w-5 h-5 text-blue-400 shrink-0" />
-      </div>
 
-      {nextScheduleDates.length === 0 ? (
-        <p className="text-sm text-slate-500 py-5">No scheduled duty days are configured for this payroll period.</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
-          {nextScheduleDates.map((day) => (
-            <div
-              key={day.date}
-              className="bg-slate-950 border border-slate-800 rounded-xl p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                <span className="font-bold text-slate-100">{day.dayLabel}</span>
-                {day.holidayName && (
-                  <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full">
-                    {day.holidayName}
+        {nextScheduleDates.length === 0 ? (
+          <p className="text-sm text-slate-500 py-5">No scheduled duty days are configured for this payroll period.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
+            {nextScheduleDates.map((day) => (
+              <div key={day.date} className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <span className="font-bold text-slate-100">{day.dayLabel}</span>
+                  {day.holidayName && (
+                    <span className="text-[10px] text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-full">
+                      {day.holidayName}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 text-blue-300 font-mono text-sm sm:text-base">
+                  <Clock3 className="w-4 h-4 shrink-0" />
+                  <span>
+                    {day.timeIn} – {day.breakOut}
+                    <span className="text-slate-500 mx-1">/</span>
+                    {day.breakIn} – {day.timeOut}
                   </span>
-                )}
-              </div>
+                </div>
 
-              <div className="flex items-center gap-2 text-blue-300 font-mono text-sm sm:text-base">
-                <Clock3 className="w-4 h-4 shrink-0" />
-                <span>
-                  {day.timeIn} – {day.breakOut}
-                  <span className="text-slate-500 mx-1">/</span>
-                  {day.breakIn} – {day.timeOut}
-                </span>
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                  <span>Time In: <b className="text-slate-300">{day.timeIn}</b></span>
+                  <span>Time Out: <b className="text-slate-300">{day.timeOut}</b></span>
+                  <span>Break Out: <b className="text-slate-300">{day.breakOut}</b></span>
+                  <span>Break In: <b className="text-slate-300">{day.breakIn}</b></span>
+                </div>
               </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-500">
-                <span>Time In: <b className="text-slate-300">{day.timeIn}</b></span>
-                <span>Time Out: <b className="text-slate-300">{day.timeOut}</b></span>
-                <span>Break Out: <b className="text-slate-300">{day.breakOut}</b></span>
-                <span>Break In: <b className="text-slate-300">{day.breakIn}</b></span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
   );
 };
