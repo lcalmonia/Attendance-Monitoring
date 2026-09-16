@@ -12,6 +12,7 @@ import {
   Employee,
   DailySchedule
 } from '../types';
+import { calculateAttendanceNightDifferentialMinutes } from './nightDifferential';
 
 /**
  * Calculates time difference in minutes between two "HH:mm" strings
@@ -189,7 +190,6 @@ export function evaluateIncentives(
       let isQualified = true;
       const reasons: string[] = [];
 
-      // Check condition: requireNoLate
       if (prog.conditions.requireNoLate) {
         const lateRecords = records.filter((r) => r.lateMinutes > 0);
         if (lateRecords.length > 0) {
@@ -199,9 +199,7 @@ export function evaluateIncentives(
         }
       }
 
-      // Check condition: requireNoAbsence
       if (prog.conditions.requireNoAbsence) {
-        // If disqualifyOnValidAbsence is true, ANY absence or leave disqualifies
         const absentRecords = records.filter((r) => {
           if (prog.conditions.disqualifyOnValidAbsence) {
             return (
@@ -222,7 +220,6 @@ export function evaluateIncentives(
         }
       }
 
-      // Check condition: minDaysPresent
       if (prog.conditions.minDaysPresent && prog.conditions.minDaysPresent > 0) {
         const presentCount = records.filter((r) => r.status === 'present').length;
         if (presentCount < prog.conditions.minDaysPresent) {
@@ -243,7 +240,9 @@ export function evaluateIncentives(
 }
 
 /**
- * Calculates live Projected or Finalized Payroll for an employee in a given period
+ * Calculates live Projected or Finalized Payroll for an employee in a given period.
+ * Night differential is calculated from actual worked time only and pays 10% of
+ * the regular hourly rate for each minute worked from 10:00 PM through 6:00 AM.
  */
 export function calculateEmployeePayroll({
   employee,
@@ -268,16 +267,13 @@ export function calculateEmployeePayroll({
   incentivePrograms: IncentiveProgram[];
   employeeDeductions: EmployeeDeduction[];
 }): PayrollRecord {
-  // 1. Filter attendance for this employee and period
   const periodAttendance = attendanceRecords.filter(
     (r) => r.employeeId === employee.id && r.date >= period.startDate && r.date <= period.endDate
   );
 
-  // Present days
   const presentRecords = periodAttendance.filter((r) => r.status === 'present');
   const daysPresent = presentRecords.length;
 
-  // Absences
   const absentRecords = periodAttendance.filter(
     (r) =>
       r.status === 'absent' ||
@@ -289,8 +285,6 @@ export function calculateEmployeePayroll({
   );
   const daysAbsent = absentRecords.length;
 
-  // Attendance-based deductions. Every minute is deducted at the configured
-  // per-minute rate; no grace period is applied.
   const lateMinutesTotal = periodAttendance.reduce((acc, r) => acc + (r.lateMinutes || 0), 0);
   const lateOccurrences = periodAttendance.filter((r) => (r.lateMinutes || 0) > 0).length;
   const lateDeductions = Number((lateMinutesTotal * compensation.perMinuteRate).toFixed(2));
@@ -299,10 +293,8 @@ export function calculateEmployeePayroll({
   const undertimeDeductions = Number((undertimeMinutesTotal * compensation.perMinuteRate).toFixed(2));
   const overBreakDeductions = Number((overBreakMinutesTotal * compensation.perMinuteRate).toFixed(2));
 
-  // Basic Pay: Daily Rate * Days Present
   const basicPay = Number((daysPresent * compensation.dailyRate).toFixed(2));
 
-  // Approved Overtime: ONLY approved overtime is added to payroll
   const periodOvertime = overtimeRecords.filter(
     (ot) => ot.employeeId === employee.id && ot.date >= period.startDate && ot.date <= period.endDate
   );
@@ -312,7 +304,6 @@ export function calculateEmployeePayroll({
     approvedOT.reduce((acc, ot) => acc + ot.calculatedPay, 0).toFixed(2)
   );
 
-  // Holiday Duty Pay
   let holidayDutyPay = 0;
   let holidayHoursWorked = 0;
   presentRecords.forEach((r) => {
@@ -323,7 +314,13 @@ export function calculateEmployeePayroll({
   });
   holidayDutyPay = Number(holidayDutyPay.toFixed(2));
 
-  // Incentives
+  // Night Shift Differential: 10% of the regular hourly rate for actual work
+  // falling within 10 PM–6 AM, excluding meal/break minutes.
+  const nightDifferentialMinutes = calculateAttendanceNightDifferentialMinutes(presentRecords);
+  const nightDifferentialPay = Number(
+    ((nightDifferentialMinutes / 60) * compensation.hourlyRate * 0.10).toFixed(2)
+  );
+
   const evaluatedIncentives = evaluateIncentives(incentivePrograms, employee, periodAttendance);
   const incentivesPay = Number(
     evaluatedIncentives.reduce((acc, inc) => acc + inc.amountGranted, 0).toFixed(2)
@@ -335,13 +332,13 @@ export function calculateEmployeePayroll({
     reason: inc.disqualificationReason,
   }));
 
-  const otherEarnings = 0;
+  // Keep the existing Other Earnings field as the payroll bucket for the
+  // separately itemized night differential premium.
+  const otherEarnings = nightDifferentialPay;
   const grossEarnings = Number(
     (basicPay + approvedOvertimePay + holidayDutyPay + incentivesPay + otherEarnings).toFixed(2)
   );
 
-  // Deductions calculation
-  // Active employee assigned deductions (SSS, PhilHealth, Pag-IBIG, Loans, Cash Advance, etc.)
   const activeDeductions = employeeDeductions.filter((d) => {
     if (d.employeeId !== employee.id || d.status !== 'active') return false;
     if (d.effectiveDate > period.endDate) return false;
@@ -356,7 +353,6 @@ export function calculateEmployeePayroll({
 
   const deductionsList: { name: string; amount: number; category: string }[] = [];
 
-  // Add auto late deduction to deduction breakdown
   if (lateDeductions > 0) {
     deductionsList.push({
       name: `Tardiness / Late (${lateMinutesTotal} mins @ ₱${compensation.perMinuteRate.toFixed(2)}/min)`,
@@ -402,7 +398,7 @@ export function calculateEmployeePayroll({
     });
   });
 
-  const absenceDeductions = 0; // Handled by basic pay being daily rate * present days
+  const absenceDeductions = 0;
 
   const totalDeductions = Number(
     (
@@ -477,4 +473,3 @@ export function evaluateIncentiveQualification(
     reason: res[0]?.disqualificationReason,
   };
 }
-
