@@ -14,11 +14,6 @@ import {
 } from '../types';
 import { calculateAttendanceNightDifferentialMinutes } from './nightDifferential';
 
-/**
- * Calculates time difference in minutes between two "HH:mm" strings.
- * If the end time is earlier than or equal to the start time, it is treated
- * as an overnight shift ending on the following day.
- */
 export function calculateMinutesBetween(startTime: string, endTime: string): number {
   if (!startTime || !endTime) return 0;
   const [startH, startM] = startTime.split(':').map(Number);
@@ -29,9 +24,6 @@ export function calculateMinutesBetween(startTime: string, endTime: string): num
   return Math.max(0, endTotal - startTotal);
 }
 
-/**
- * Parses time string (e.g., "08:15:20" or "08:15") into "HH:mm"
- */
 export function formatToHHMM(timeStr?: string): string {
   if (!timeStr) return '';
   const parts = timeStr.split(':');
@@ -41,10 +33,6 @@ export function formatToHHMM(timeStr?: string): string {
   return timeStr;
 }
 
-/**
- * Returns the configured schedule for a specific day. Falls back to the legacy
- * schedule fields so existing employee schedules remain compatible.
- */
 export function getScheduleForDay(schedule: WorkSchedule, day: number): DailySchedule {
   const configured = schedule.dailySchedules?.find((item) => item.day === day);
   if (configured) return configured;
@@ -58,11 +46,6 @@ export function getScheduleForDay(schedule: WorkSchedule, day: number): DailySch
   };
 }
 
-/**
- * Computes compensation rates:
- * Hourly Rate = Daily Rate / Required Working Hours
- * Per-Minute Rate = Hourly Rate / 60
- */
 export function calculateRates(dailyRate: number, requiredWorkingHours: number = 8) {
   const safeHours = requiredWorkingHours > 0 ? requiredWorkingHours : 8;
   const hourlyRate = dailyRate / safeHours;
@@ -75,9 +58,6 @@ export function calculateRates(dailyRate: number, requiredWorkingHours: number =
   };
 }
 
-/**
- * Calculates schedule metrics and warns if net required hours exceed 8 hours
- */
 export function calculateScheduleMetrics(
   timeIn: string,
   breakOut: string,
@@ -102,10 +82,6 @@ export function calculateScheduleMetrics(
   };
 }
 
-/**
- * Compute late minutes and deduction.
- * STRICT RULE: No grace period! Every minute after required time in is late.
- */
 export function computeLate(
   actualTimeIn?: string,
   requiredTimeIn?: string,
@@ -212,11 +188,6 @@ export function evaluateIncentives(
     });
 }
 
-/**
- * Calculates live Projected or Finalized Payroll for an employee in a given period.
- * Night differential is calculated from actual worked time only and pays 10% of
- * the regular hourly rate for each minute worked from 10:00 PM through 6:00 AM.
- */
 export function calculateEmployeePayroll({
   employee,
   businessName,
@@ -270,7 +241,19 @@ export function calculateEmployeePayroll({
   });
   holidayDutyPay = Number(holidayDutyPay.toFixed(2));
 
-  const nightDifferentialMinutes = calculateAttendanceNightDifferentialMinutes(presentRecords);
+  // ND is calculated only inside the employee's required schedule for that date.
+  // Extra time after requiredTimeOut is handled separately by overtime rules.
+  const nightDifferentialMinutes = calculateAttendanceNightDifferentialMinutes(
+    presentRecords,
+    (record) => {
+      const dayOfWeek = new Date(`${record.date}T12:00:00`).getDay();
+      const daySchedule = getScheduleForDay(schedule, dayOfWeek);
+      return {
+        requiredTimeIn: daySchedule.requiredTimeIn,
+        requiredTimeOut: daySchedule.requiredTimeOut,
+      };
+    }
+  );
   const nightDifferentialPay = Number(((nightDifferentialMinutes / 60) * compensation.hourlyRate * 0.10).toFixed(2));
 
   const evaluatedIncentives = evaluateIncentives(incentivePrograms, employee, periodAttendance);
