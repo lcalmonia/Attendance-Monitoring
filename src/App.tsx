@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Navbar } from './components/Navbar';
 import { NavigationTabs } from './components/NavigationTabs';
@@ -20,17 +20,15 @@ import { Settings } from './components/Settings';
 import { ShieldCheck } from 'lucide-react';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordScreen } from './components/ChangePasswordScreen';
-import { authApi, clearAuthToken } from './services/auth';
+import { authApi, clearAuthToken, getAuthToken } from './services/auth';
 
 const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const { currentUser } = useApp();
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
-    if (currentUser.role === 'employee' || currentUser.role === 'business_admin') {
-      if (['businesses', 'holidays', 'deductions', 'audit', 'settings'].includes(activeTab)) {
-        setActiveTab('dashboard');
-      }
+    if ((currentUser.role === 'employee' || currentUser.role === 'business_admin') && ['businesses', 'holidays', 'deductions', 'audit', 'settings'].includes(activeTab)) {
+      setActiveTab('dashboard');
     }
   }, [currentUser.role, activeTab]);
 
@@ -53,63 +51,84 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         {activeTab === 'audit' && <AuditTrail />}
         {activeTab === 'settings' && <Settings />}
       </main>
-      <footer className="bg-slate-900 border-t border-slate-800/80 py-6 text-xs text-slate-500 print:hidden"><div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4"><div className="flex items-center gap-2"><span className="font-bold text-slate-300">WorkSphere</span><span>•</span><span>CV Group of Companies</span></div><div className="flex items-center gap-4 text-[11px] text-slate-400"><span className="flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5 text-blue-400" /> CCTV Verified Clock Station</span><span>Zero Late Grace Period Enforced</span></div></div></footer>
+      <footer className="bg-slate-900 border-t border-slate-800/80 py-6 text-xs text-slate-500 print:hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2"><span className="font-bold text-slate-300">WorkSphere</span><span>•</span><span>CV Group of Companies</span></div>
+          <div className="flex items-center gap-4 text-[11px] text-slate-400"><span className="flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5 text-blue-400" /> CCTV Verified Clock Station</span><span>Zero Late Grace Period Enforced</span></div>
+        </div>
+      </footer>
     </div>
   );
 };
 
-const AuthenticatedApp: React.FC = () => {
+const AuthenticatedApp: React.FC<{ onNeedLogin: () => void; onLogout: () => void }> = ({ onNeedLogin, onLogout }) => {
   const { users, switchUser, isHydrated } = useApp();
-  const [status, setStatus] = useState<'checking' | 'login' | 'change_password' | 'ready'>('checking');
+  const [status, setStatus] = useState<'checking' | 'change_password' | 'ready'>('checking');
 
   useEffect(() => {
     if (!isHydrated) return;
-
     authApi.session().then((session) => {
       if (!session.authenticated || !session.userId) throw new Error('No session');
-      const user = users.find((item) => item.id === session.userId);
-      if (!user) {
-        clearAuthToken();
-        setStatus('login');
-        return;
-      }
+      if (!users.some((user) => user.id === session.userId)) throw new Error('Authenticated user is missing from application state.');
       switchUser(session.userId);
       setStatus(session.mustChangePassword ? 'change_password' : 'ready');
     }).catch(() => {
       clearAuthToken();
-      setStatus('login');
+      onNeedLogin();
     });
-  }, [users, isHydrated]);
+    // switchUser is a context action recreated by React; it is intentionally omitted
+    // because the effect should run when hydrated users change, not on every render.
+  }, [users, isHydrated, onNeedLogin]);
 
-  const handleAuthenticated = (userId: string, mustChangePassword: boolean) => {
-    const user = users.find((item) => item.id === userId);
-    if (!user) {
-      clearAuthToken();
-      setStatus('login');
-      return;
-    }
-    switchUser(userId);
-    setStatus(mustChangePassword ? 'change_password' : 'ready');
-  };
-
-  const handleLogout = async () => {
-    await authApi.logout();
-    clearAuthToken();
-    setStatus('login');
-  };
-
-  if (!isHydrated || status === 'checking') {
-    return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
-  }
-  if (status === 'login') return <LoginScreen onAuthenticated={handleAuthenticated} />;
+  if (!isHydrated || status === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
   if (status === 'change_password') return <ChangePasswordScreen onComplete={() => setStatus('ready')} />;
-  return <MainLayout onLogout={handleLogout} />;
+  return <MainLayout onLogout={onLogout} />;
 };
 
 export default function App() {
+  const [authState, setAuthState] = useState<'checking' | 'login' | 'authenticated'>('checking');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!getAuthToken()) {
+      setAuthState('login');
+      return;
+    }
+    authApi.session().then((session) => {
+      if (!cancelled) setAuthState(session.authenticated && session.userId ? 'authenticated' : 'login');
+    }).catch(() => {
+      if (!cancelled) {
+        clearAuthToken();
+        setAuthState('login');
+      }
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleAuthenticated = useCallback((_userId: string, _mustChangePassword: boolean) => {
+    setAuthState('authenticated');
+  }, []);
+
+  const handleNeedLogin = useCallback(() => {
+    clearAuthToken();
+    setAuthState('login');
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      clearAuthToken();
+      setAuthState('login');
+    }
+  }, []);
+
+  if (authState === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
+  if (authState === 'login') return <LoginScreen onAuthenticated={handleAuthenticated} />;
+
   return (
     <AppProvider>
-      <AuthenticatedApp />
+      <AuthenticatedApp onNeedLogin={handleNeedLogin} onLogout={handleLogout} />
     </AppProvider>
   );
 }
