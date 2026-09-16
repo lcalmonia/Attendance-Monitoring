@@ -1,13 +1,7 @@
 import React, { createContext, useContext, useEffect } from 'react';
 import { AppProvider as BaseAppProvider, useApp as useBaseApp } from './AppContextBase';
 
-/**
- * Compatibility layer for overnight attendance clocking.
- * The existing provider remains the source of truth; this layer only adds
- * cross-midnight handling for shifts such as 22:00-06:00.
- */
 type AppContextValue = ReturnType<typeof useBaseApp>;
-
 const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 const toMinutes = (value: string) => {
@@ -38,7 +32,7 @@ const getScheduleForDate = (base: AppContextValue, employeeId: string, date: str
 
   return dateSchedule || employeeSchedule.dailySchedules?.find((item) => {
     const day = new Date(`${date}T00:00:00`).getDay();
-    return item.dayOfWeek === day;
+    return item.day === day;
   }) || employeeSchedule;
 };
 
@@ -52,7 +46,7 @@ const getOvernightRecord = (base: AppContextValue, employeeId: string, currentDa
   const schedule = getScheduleForDate(base, employeeId, previousDate);
   if (!isOvernight(schedule?.requiredTimeIn, schedule?.requiredTimeOut)) return undefined;
 
-  return { record, schedule, previousDate };
+  return { record, schedule };
 };
 
 const elapsedMinutes = (start: string, end: string) => {
@@ -71,8 +65,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const base = useBaseApp();
 
-  // The legacy clock accepts the Time In but labels a cross-midnight start as
-  // outside scheduled time. Normalize that record after React commits it.
   useEffect(() => {
     base.attendanceRecords.forEach((record) => {
       if (!record.timeIn || record.timeOut || record.status !== 'outside_scheduled_time') return;
@@ -91,7 +83,6 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     const today = formatDate(now);
     const overnight = getOvernightRecord(base, employeeId, today);
 
-    // Before midnight, the original clocking flow is still correct.
     if (!overnight) return base.recordAttendance(employeeId, action);
 
     const { record, schedule } = overnight;
@@ -131,7 +122,6 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
       let actualOut = toMinutes(timeHHMM);
       if (actualOut <= actualIn) actualOut += 24 * 60;
 
-      // Do not accept a Time Out that is still on/before the scheduled start.
       if (actualOut < reqIn) {
         return { success: false, message: 'Time Out is too early for the scheduled overnight shift.' };
       }
@@ -183,18 +173,14 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
         success: true,
         message: status === 'present'
           ? `Time Out recorded at ${timeStr} (${totalWorkHours} valid scheduled hours). Shift completed.`
-          : `Time Out recorded at ${timeStr}. Attendance status: ${status.replaceAll('_', ' ')}.`,
+          : `Time Out recorded at ${timeStr}. Attendance status: ${status.replace(/_/g, ' ')}.`,
       };
     }
 
     return base.recordAttendance(employeeId, action);
   };
 
-  return (
-    <AppContext.Provider value={{ ...base, recordAttendance }}>
-      {children}
-    </AppContext.Provider>
-  );
+  return <AppContext.Provider value={{ ...base, recordAttendance }}>{children}</AppContext.Provider>;
 };
 
 export const useApp = () => {
