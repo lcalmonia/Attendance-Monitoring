@@ -79,7 +79,7 @@ const AuthenticatedApp: React.FC = () => {
       clearAuthToken();
       setStatus('login');
     });
-  }, [users, isHydrated, switchUser]);
+  }, [users, isHydrated]);
 
   const handleAuthenticated = (userId: string, mustChangePassword: boolean) => {
     const user = users.find((item) => item.id === userId);
