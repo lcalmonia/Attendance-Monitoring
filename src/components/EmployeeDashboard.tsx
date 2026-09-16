@@ -70,11 +70,17 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   const activePeriodForToday = payrollPeriods.find((p) => todayStr >= p.startDate && todayStr <= p.endDate);
   const todaySchedule = dateSchedules.find((entry) => entry.employeeId === currentUser.id && entry.date === todayStr && (!activePeriodForToday || entry.payrollPeriodId === activePeriodForToday.id)) || (schedule ? getScheduleForDay(schedule, currentTime.getDay()) : undefined);
 
-  // Active current period (Sept 1-15, 2026)
+  // The employee portal must always use the payroll period that contains today's date.
+  // Status is intentionally ignored here because a projected/for_review flag does not
+  // determine which cut-off is currently in progress.
   const activePeriod =
-    payrollPeriods.find((p) => p.status === 'projected' || p.status === 'for_review') ||
-    payrollPeriods[1] ||
-    payrollPeriods[0];
+    payrollPeriods.find((p) => todayStr >= p.startDate && todayStr <= p.endDate) ||
+    [...payrollPeriods]
+      .filter((p) => p.endDate < todayStr)
+      .sort((a, b) => b.endDate.localeCompare(a.endDate))[0] ||
+    [...payrollPeriods]
+      .filter((p) => p.startDate > todayStr)
+      .sort((a, b) => a.startDate.localeCompare(b.startDate))[0];
 
   // Date-specific payroll-period schedules are authoritative. Weekly schedules are used only as a fallback.
   const cutoffScheduleDates = (() => {
@@ -109,7 +115,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   })();
 
   // Calculate live expected salary for this employee in current period
-  const livePayroll = employee && compensation && schedule
+  const livePayroll = employee && compensation && schedule && activePeriod
     ? calculateEmployeePayroll({
         employee,
         businessName: business?.name || 'CV Group',
@@ -136,12 +142,12 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   );
 
   // Period attendance metrics
-  const periodAttendance = attendanceRecords.filter(
+  const periodAttendance = activePeriod ? attendanceRecords.filter(
     (r) =>
       r.employeeId === currentUser.id &&
       r.date >= activePeriod.startDate &&
       r.date <= activePeriod.endDate
-  );
+  ) : [];
   const daysPresent = periodAttendance.filter((r) => r.status === 'present').length;
   const lateDays = periodAttendance.filter((r) => r.lateMinutes > 0).length;
   const totalLateMinutes = periodAttendance.reduce((acc, r) => acc + r.lateMinutes, 0);
@@ -150,12 +156,12 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   ).length;
 
   // Overtime counts
-  const userOvertime = overtimeRecords.filter(
+  const userOvertime = activePeriod ? overtimeRecords.filter(
     (ot) =>
       ot.employeeId === currentUser.id &&
       ot.date >= activePeriod.startDate &&
       ot.date <= activePeriod.endDate
-  );
+  ) : [];
   const pendingOT = userOvertime.filter((ot) => ot.status === 'pending');
   const approvedOT = userOvertime.filter((ot) => ot.status === 'approved');
   const potentialOTMinutes = userOvertime.reduce((acc, ot) => acc + ot.potentialOvertimeMinutes, 0);
