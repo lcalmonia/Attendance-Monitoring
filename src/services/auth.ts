@@ -74,7 +74,7 @@ export const authApi = {
     try { await api("/api/auth/logout", { method: "POST" }); } finally { clearAuthToken(); }
   },
   changePassword: (currentPassword: string, newPassword: string) =>
-    api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword })),
+    api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
   provision: (userId: string, employeeId: string, temporaryPassword?: string, mobileNumber?: string) =>
     api("/api/auth/provision", { method: "POST", body: JSON.stringify({ userId, employeeId, temporaryPassword, mobileNumber }) }),
   deleteAccount: (userId: string) => api("/api/auth/delete", { method: "POST", body: JSON.stringify({ userId }) }),
