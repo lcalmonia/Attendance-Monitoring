@@ -25,10 +25,18 @@ export function hashPassword(
 }
 
 export function verifyPassword(password: string, stored: string) {
-  const [algorithm, salt, expected] = stored.split(":");
-  if (algorithm !== "scrypt" || !salt || !expected) return false;
-  const actual = scryptSync(password, salt, 64).toString("hex");
-  return timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
+  try {
+    const [algorithm, salt, expectedHex] = String(stored || "").split(":");
+    if (algorithm !== "scrypt" || !salt || !expectedHex) return false;
+
+    const expected = Buffer.from(expectedHex, "hex");
+    if (expected.length === 0) return false;
+
+    const actual = scryptSync(password, salt, expected.length);
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
 export function createSessionToken() {
