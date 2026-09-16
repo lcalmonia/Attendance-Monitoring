@@ -15,14 +15,17 @@ import {
 import { calculateAttendanceNightDifferentialMinutes } from './nightDifferential';
 
 /**
- * Calculates time difference in minutes between two "HH:mm" strings
+ * Calculates time difference in minutes between two "HH:mm" strings.
+ * If the end time is earlier than or equal to the start time, it is treated
+ * as an overnight shift ending on the following day.
  */
 export function calculateMinutesBetween(startTime: string, endTime: string): number {
   if (!startTime || !endTime) return 0;
   const [startH, startM] = startTime.split(':').map(Number);
   const [endH, endM] = endTime.split(':').map(Number);
   const startTotal = startH * 60 + startM;
-  const endTotal = endH * 60 + endM;
+  let endTotal = endH * 60 + endM;
+  if (endTotal <= startTotal) endTotal += 24 * 60;
   return Math.max(0, endTotal - startTotal);
 }
 
@@ -102,7 +105,6 @@ export function calculateScheduleMetrics(
 /**
  * Compute late minutes and deduction.
  * STRICT RULE: No grace period! Every minute after required time in is late.
- * Example: Required 08:00, Actual 08:01 => 1 minute late.
  */
 export function computeLate(
   actualTimeIn?: string,
@@ -115,31 +117,19 @@ export function computeLate(
 
   const [reqH, reqM] = requiredTimeIn.split(':').map(Number);
   const [actH, actM] = actualTimeIn.split(':').map(Number);
-
   const reqTotal = reqH * 60 + reqM;
   const actTotal = actH * 60 + actM;
-
   const diff = actTotal - reqTotal;
 
   if (diff > 0) {
     const lateMinutes = diff;
     const lateDeduction = Number((lateMinutes * perMinuteRate).toFixed(2));
-    return {
-      lateMinutes,
-      lateOccurrences: 1,
-      lateDeduction,
-    };
+    return { lateMinutes, lateOccurrences: 1, lateDeduction };
   }
 
   return { lateMinutes: 0, lateOccurrences: 0, lateDeduction: 0 };
 }
 
-/**
- * Evaluates potential overtime for a shift:
- * Compare Actual Time Out with Required Time Out.
- * Check minimum overtime requirement (default 60 minutes).
- * Overtime below requirement is not considered.
- */
 export function evaluateOvertime(
   actualTimeOut: string,
   requiredTimeOut: string,
@@ -149,15 +139,9 @@ export function evaluateOvertime(
   const diffMinutes = calculateMinutesBetween(requiredTimeOut, actualTimeOut);
 
   if (diffMinutes < minimumOvertimeMinutes) {
-    return {
-      totalExcessMinutes: diffMinutes,
-      potentialOvertimeMinutes: 0,
-      isEligible: false,
-      calculatedPay: 0,
-    };
+    return { totalExcessMinutes: diffMinutes, potentialOvertimeMinutes: 0, isEligible: false, calculatedPay: 0 };
   }
 
-  // Eligible for overtime review
   const potentialOvertimeMinutes = diffMinutes;
   let calculatedPay = 0;
   if (compensation.overtimeRateType === 'multiplier') {
@@ -174,9 +158,6 @@ export function evaluateOvertime(
   };
 }
 
-/**
- * Evaluates all incentive programs for an employee over an attendance dataset
- */
 export function evaluateIncentives(
   programs: IncentiveProgram[],
   employee: Employee,
@@ -202,18 +183,10 @@ export function evaluateIncentives(
       if (prog.conditions.requireNoAbsence) {
         const absentRecords = records.filter((r) => {
           if (prog.conditions.disqualifyOnValidAbsence) {
-            return (
-              r.status === 'absent' ||
-              r.status === 'authorized_absence' ||
-              r.status === 'leave' ||
-              r.status === 'sick_leave' ||
-              r.status === 'vacation_leave' ||
-              r.status === 'emergency_leave'
-            );
+            return ['absent', 'authorized_absence', 'leave', 'sick_leave', 'vacation_leave', 'emergency_leave'].includes(r.status);
           }
           return r.status === 'absent';
         });
-
         if (absentRecords.length > 0) {
           isQualified = false;
           reasons.push(`${absentRecords.length} absence/leave day(s) recorded`);
@@ -267,22 +240,10 @@ export function calculateEmployeePayroll({
   incentivePrograms: IncentiveProgram[];
   employeeDeductions: EmployeeDeduction[];
 }): PayrollRecord {
-  const periodAttendance = attendanceRecords.filter(
-    (r) => r.employeeId === employee.id && r.date >= period.startDate && r.date <= period.endDate
-  );
-
+  const periodAttendance = attendanceRecords.filter((r) => r.employeeId === employee.id && r.date >= period.startDate && r.date <= period.endDate);
   const presentRecords = periodAttendance.filter((r) => r.status === 'present');
   const daysPresent = presentRecords.length;
-
-  const absentRecords = periodAttendance.filter(
-    (r) =>
-      r.status === 'absent' ||
-      r.status === 'authorized_absence' ||
-      r.status === 'leave' ||
-      r.status === 'sick_leave' ||
-      r.status === 'vacation_leave' ||
-      r.status === 'emergency_leave'
-  );
+  const absentRecords = periodAttendance.filter((r) => ['absent', 'authorized_absence', 'leave', 'sick_leave', 'vacation_leave', 'emergency_leave'].includes(r.status));
   const daysAbsent = absentRecords.length;
 
   const lateMinutesTotal = periodAttendance.reduce((acc, r) => acc + (r.lateMinutes || 0), 0);
@@ -292,17 +253,12 @@ export function calculateEmployeePayroll({
   const overBreakMinutesTotal = periodAttendance.reduce((acc, r) => acc + (r.overBreakMinutes || 0), 0);
   const undertimeDeductions = Number((undertimeMinutesTotal * compensation.perMinuteRate).toFixed(2));
   const overBreakDeductions = Number((overBreakMinutesTotal * compensation.perMinuteRate).toFixed(2));
-
   const basicPay = Number((daysPresent * compensation.dailyRate).toFixed(2));
 
-  const periodOvertime = overtimeRecords.filter(
-    (ot) => ot.employeeId === employee.id && ot.date >= period.startDate && ot.date <= period.endDate
-  );
+  const periodOvertime = overtimeRecords.filter((ot) => ot.employeeId === employee.id && ot.date >= period.startDate && ot.date <= period.endDate);
   const approvedOT = periodOvertime.filter((ot) => ot.status === 'approved');
   const approvedOvertimeMinutes = approvedOT.reduce((acc, ot) => acc + ot.potentialOvertimeMinutes, 0);
-  const approvedOvertimePay = Number(
-    approvedOT.reduce((acc, ot) => acc + ot.calculatedPay, 0).toFixed(2)
-  );
+  const approvedOvertimePay = Number(approvedOT.reduce((acc, ot) => acc + ot.calculatedPay, 0).toFixed(2));
 
   let holidayDutyPay = 0;
   let holidayHoursWorked = 0;
@@ -314,30 +270,15 @@ export function calculateEmployeePayroll({
   });
   holidayDutyPay = Number(holidayDutyPay.toFixed(2));
 
-  // Night Shift Differential: 10% of the regular hourly rate for actual work
-  // falling within 10 PM–6 AM, excluding meal/break minutes.
   const nightDifferentialMinutes = calculateAttendanceNightDifferentialMinutes(presentRecords);
-  const nightDifferentialPay = Number(
-    ((nightDifferentialMinutes / 60) * compensation.hourlyRate * 0.10).toFixed(2)
-  );
+  const nightDifferentialPay = Number(((nightDifferentialMinutes / 60) * compensation.hourlyRate * 0.10).toFixed(2));
 
   const evaluatedIncentives = evaluateIncentives(incentivePrograms, employee, periodAttendance);
-  const incentivesPay = Number(
-    evaluatedIncentives.reduce((acc, inc) => acc + inc.amountGranted, 0).toFixed(2)
-  );
-  const incentivesList = evaluatedIncentives.map((inc) => ({
-    name: inc.name,
-    amount: inc.amount,
-    isQualified: inc.isQualified,
-    reason: inc.disqualificationReason,
-  }));
+  const incentivesPay = Number(evaluatedIncentives.reduce((acc, inc) => acc + inc.amountGranted, 0).toFixed(2));
+  const incentivesList = evaluatedIncentives.map((inc) => ({ name: inc.name, amount: inc.amount, isQualified: inc.isQualified, reason: inc.disqualificationReason }));
 
-  // Keep the existing Other Earnings field as the payroll bucket for the
-  // separately itemized night differential premium.
   const otherEarnings = nightDifferentialPay;
-  const grossEarnings = Number(
-    (basicPay + approvedOvertimePay + holidayDutyPay + incentivesPay + otherEarnings).toFixed(2)
-  );
+  const grossEarnings = Number((basicPay + approvedOvertimePay + holidayDutyPay + incentivesPay + otherEarnings).toFixed(2));
 
   const activeDeductions = employeeDeductions.filter((d) => {
     if (d.employeeId !== employee.id || d.status !== 'active') return false;
@@ -350,69 +291,24 @@ export function calculateEmployeePayroll({
   let loanDeductions = 0;
   let cashAdvanceDeductions = 0;
   let otherDeductions = 0;
-
   const deductionsList: { name: string; amount: number; category: string }[] = [];
 
-  if (lateDeductions > 0) {
-    deductionsList.push({
-      name: `Tardiness / Late (${lateMinutesTotal} mins @ ₱${compensation.perMinuteRate.toFixed(2)}/min)`,
-      amount: lateDeductions,
-      category: 'attendance',
-    });
-  }
-  if (undertimeDeductions > 0) {
-    deductionsList.push({
-      name: `Undertime (${undertimeMinutesTotal} mins)`,
-      amount: undertimeDeductions,
-      category: 'attendance',
-    });
-  }
-  if (overBreakDeductions > 0) {
-    deductionsList.push({
-      name: `Excess Break (${overBreakMinutesTotal} mins)`,
-      amount: overBreakDeductions,
-      category: 'attendance',
-    });
-  }
+  if (lateDeductions > 0) deductionsList.push({ name: `Tardiness / Late (${lateMinutesTotal} mins @ ₱${compensation.perMinuteRate.toFixed(2)}/min)`, amount: lateDeductions, category: 'attendance' });
+  if (undertimeDeductions > 0) deductionsList.push({ name: `Undertime (${undertimeMinutesTotal} mins)`, amount: undertimeDeductions, category: 'attendance' });
+  if (overBreakDeductions > 0) deductionsList.push({ name: `Excess Break (${overBreakMinutesTotal} mins)`, amount: overBreakDeductions, category: 'attendance' });
 
   activeDeductions.forEach((d) => {
     let amount = d.amount;
-    if (d.calcType === 'percentage') {
-      amount = Number(((basicPay * d.amount) / 100).toFixed(2));
-    }
-
-    if (d.category === 'statutory') {
-      statutoryDeductions += amount;
-    } else if (d.category === 'loan') {
-      loanDeductions += amount;
-    } else if (d.category === 'advance') {
-      cashAdvanceDeductions += amount;
-    } else {
-      otherDeductions += amount;
-    }
-
-    deductionsList.push({
-      name: d.deductionName,
-      amount,
-      category: d.category,
-    });
+    if (d.calcType === 'percentage') amount = Number(((basicPay * d.amount) / 100).toFixed(2));
+    if (d.category === 'statutory') statutoryDeductions += amount;
+    else if (d.category === 'loan') loanDeductions += amount;
+    else if (d.category === 'advance') cashAdvanceDeductions += amount;
+    else otherDeductions += amount;
+    deductionsList.push({ name: d.deductionName, amount, category: d.category });
   });
 
   const absenceDeductions = 0;
-
-  const totalDeductions = Number(
-    (
-      lateDeductions +
-      absenceDeductions +
-      undertimeDeductions +
-      overBreakDeductions +
-      statutoryDeductions +
-      loanDeductions +
-      cashAdvanceDeductions +
-      otherDeductions
-    ).toFixed(2)
-  );
-
+  const totalDeductions = Number((lateDeductions + absenceDeductions + undertimeDeductions + overBreakDeductions + statutoryDeductions + loanDeductions + cashAdvanceDeductions + otherDeductions).toFixed(2));
   const netSalary = Math.max(0, Number((grossEarnings - totalDeductions).toFixed(2)));
 
   return {
@@ -460,16 +356,10 @@ export function calculateEmployeePayroll({
   };
 }
 
-/**
- * Helper to evaluate single incentive program qualification for attendance logs
- */
 export function evaluateIncentiveQualification(
   program: IncentiveProgram,
   records: AttendanceRecord[]
 ): { isQualified: boolean; reason?: string } {
   const res = evaluateIncentives([program], { id: 'temp', businessId: program.applicableBusinessId || '' } as any, records);
-  return {
-    isQualified: res[0]?.isQualified ?? false,
-    reason: res[0]?.disqualificationReason,
-  };
+  return { isQualified: res[0]?.isQualified ?? false, reason: res[0]?.disqualificationReason };
 }
