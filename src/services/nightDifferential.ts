@@ -2,7 +2,8 @@ import { AttendanceRecord } from '../types';
 
 const MINUTES_PER_DAY = 24 * 60;
 const NIGHT_START = 22 * 60;
-const NIGHT_END = 30 * 60; // 06:00 on the following day
+const NIGHT_MIDNIGHT_END = 24 * 60;
+const NIGHT_MORNING_END = 6 * 60;
 
 const toMinutes = (value?: string) => {
   if (!value) return null;
@@ -14,10 +15,14 @@ const toMinutes = (value?: string) => {
 const overlap = (start: number, end: number, windowStart: number, windowEnd: number) =>
   Math.max(0, Math.min(end, windowEnd) - Math.max(start, windowStart));
 
+const nightOverlap = (start: number, end: number) =>
+  overlap(start, end, 0, NIGHT_MORNING_END) +
+  overlap(start, end, NIGHT_START, NIGHT_MIDNIGHT_END) +
+  overlap(start, end, MINUTES_PER_DAY, MINUTES_PER_DAY + NIGHT_MORNING_END);
+
 /**
- * Returns actual worked minutes that fall within the Philippine private-sector
- * night differential window of 10:00 PM through 6:00 AM. Meal/break time is
- * excluded from the payable night hours.
+ * Returns actual worked minutes that fall within 10:00 PM–6:00 AM.
+ * Meal/break time is excluded from the payable night hours.
  */
 export function calculateNightDifferentialMinutes(
   timeIn?: string,
@@ -32,30 +37,14 @@ export function calculateNightDifferentialMinutes(
   let end = rawEnd;
   if (end <= start) end += MINUTES_PER_DAY;
 
+  let nightMinutes = nightOverlap(start, end);
+
   const breakStart = toMinutes(breakOut);
   const breakEndRaw = toMinutes(breakIn);
-  let breakEnd = breakEndRaw;
-  if (breakStart !== null && breakEnd !== null && breakEnd <= breakStart) {
-    breakEnd += MINUTES_PER_DAY;
-  }
-
-  // Check both the 10 PM–6 AM window beginning on the shift date and the
-  // midnight–6 AM portion represented as 0–6 on that date.
-  let nightMinutes =
-    overlap(start, end, 0, 6 * 60) +
-    overlap(start, end, NIGHT_START, NIGHT_END);
-
-  // For shifts that start after midnight, the 10 PM–midnight window belongs
-  // to the previous calendar day and must be represented as 22:00–30:00.
-  if (start < 6 * 60) {
-    nightMinutes += overlap(start, end, -2 * 60, 0);
-  }
-
-  if (breakStart !== null && breakEnd !== null) {
-    nightMinutes -=
-      overlap(breakStart, breakEnd, 0, 6 * 60) +
-      overlap(breakStart, breakEnd, NIGHT_START, NIGHT_END) +
-      (breakStart < 6 * 60 ? overlap(breakStart, breakEnd, -2 * 60, 0) : 0);
+  if (breakStart !== null && breakEndRaw !== null) {
+    let breakEnd = breakEndRaw;
+    if (breakEnd <= breakStart) breakEnd += MINUTES_PER_DAY;
+    nightMinutes -= nightOverlap(breakStart, breakEnd);
   }
 
   return Math.max(0, Math.round(nightMinutes));
