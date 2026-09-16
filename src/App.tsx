@@ -107,6 +107,11 @@ const AutomaticNextPayrollPeriod: React.FC = () => {
       status: 'projected',
     };
 
+    // The period is persisted before the reload. Guard the reload so a stale
+    // remote response cannot put the app into an endless reload loop.
+    const reloadKey = `worksphere_auto_payroll_reloaded_${newPeriod.id}`;
+    if (sessionStorage.getItem(reloadKey) === '1') return;
+
     runningRef.current = true;
     const nextPeriods = [...payrollPeriods, newPeriod].sort((a, b) => a.startDate.localeCompare(b.startDate));
 
@@ -130,7 +135,10 @@ const AutomaticNextPayrollPeriod: React.FC = () => {
       notifications,
       systemSettings,
     })
-      .then(() => window.location.reload())
+      .then(() => {
+        sessionStorage.setItem(reloadKey, '1');
+        window.location.reload();
+      })
       .catch((error) => {
         runningRef.current = false;
         console.error('Failed to auto-create next payroll period', error);
