@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { NavigationTabs } from './components/NavigationTabs';
 import { EmployeeDashboard } from './components/EmployeeDashboard';
 import { EmployeeUpcomingSchedule } from './components/EmployeeUpcomingSchedule';
+import { LiveNightDifferentialRow } from './components/LiveNightDifferentialRow';
 import { SuperAdminDashboard } from './components/SuperAdminDashboard';
 import { AttendanceManagement } from './components/AttendanceManagement';
 import { EmployeeManagement } from './components/EmployeeManagement';
@@ -177,6 +178,7 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         {activeTab === 'expected_salary' && (
           <>
             <EmployeeDashboard view="salary" />
+            {currentUser.role === 'employee' && <LiveNightDifferentialRow />}
             {currentUser.role === 'employee' && <EmployeeUpcomingSchedule />}
           </>
         )}
