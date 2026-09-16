@@ -25,48 +25,152 @@ import { saveAppState } from './services/netlifyState';
 import { PayrollPeriod } from './types';
 
 const toDate = (value: string) => new Date(`${value}T12:00:00`);
-const formatDate = (date: Date) => date.toISOString().slice(0, 10);
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 const addDays = (date: Date, days: number) => {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
 };
 
-const AutomaticNextPayrollPeriod: React.FC = () => {
-  const { payrollPeriods, businesses, users, employees, compensations, schedules, dateSchedules, attendanceRecords, overtimeRecords, holidays, incentivePrograms, deductionTypes, employeeDeductions, payrollRecords, auditLogs, notifications, systemSettings, isHydrated } = useApp();
+/**
+ * Keeps one future semi-monthly cut-off available for schedule planning.
+ * Example: when Sep 16–30 is the current cut-off, Oct 1–15 is automatically
+ * created so Super Admin can plan employee schedules ahead of time.
+ *
+ * This intentionally updates the provider by remounting it after the shared
+ * state has been saved. It does NOT call window.location.reload(), avoiding
+ * the startup blank-page/reload loop that affected the previous implementation.
+ */
+const AutomaticNextPayrollPeriod: React.FC<{ onPeriodCreated: () => void }> = ({ onPeriodCreated }) => {
+  const {
+    payrollPeriods,
+    businesses,
+    users,
+    employees,
+    compensations,
+    schedules,
+    dateSchedules,
+    attendanceRecords,
+    overtimeRecords,
+    holidays,
+    incentivePrograms,
+    deductionTypes,
+    employeeDeductions,
+    payrollRecords,
+    auditLogs,
+    notifications,
+    systemSettings,
+    isHydrated,
+  } = useApp();
   const runningRef = useRef(false);
 
   useEffect(() => {
     if (!isHydrated || runningRef.current || payrollPeriods.length === 0) return;
+
     const todayStr = formatDate(new Date());
     const sorted = [...payrollPeriods].sort((a, b) => a.startDate.localeCompare(b.startDate));
     const currentPeriod = sorted.find((period) => period.startDate <= todayStr && todayStr <= period.endDate);
-    const previousOrCurrent = currentPeriod || [...sorted].filter((period) => period.endDate < todayStr).sort((a, b) => b.endDate.localeCompare(a.endDate))[0];
+    const previousOrCurrent = currentPeriod || [...sorted]
+      .filter((period) => period.endDate < todayStr)
+      .sort((a, b) => b.endDate.localeCompare(a.endDate))[0];
+
     if (!previousOrCurrent) return;
+
     const nextStartDate = addDays(toDate(previousOrCurrent.endDate), 1);
     const startDay = nextStartDate.getDate();
     const year = nextStartDate.getFullYear();
     const month = nextStartDate.getMonth();
-    const nextEndDate = startDay <= 15 ? new Date(year, month, 15, 12) : new Date(year, month + 1, 0, 12);
+
+    // Semi-monthly cycle: 1–15, then 16–last day of the month.
+    const nextEndDate = startDay <= 15
+      ? new Date(year, month, 15, 12)
+      : new Date(year, month + 1, 0, 12);
+
     const nextStart = formatDate(nextStartDate);
     const nextEnd = formatDate(nextEndDate);
+
     if (payrollPeriods.some((period) => period.startDate === nextStart && period.endDate === nextEnd)) return;
+
     const isFirstCutoff = startDay <= 15;
-    const payoutDate = isFirstCutoff ? formatDate(new Date(year, month, 20, 12)) : formatDate(new Date(year, month + 1, 5, 12));
+    const payoutDate = isFirstCutoff
+      ? formatDate(new Date(year, month, 20, 12))
+      : formatDate(new Date(year, month + 1, 5, 12));
     const cutoffNumber = isFirstCutoff ? 1 : 2;
     const monthLabel = nextStartDate.toLocaleDateString('en-US', { month: 'long' });
     const endMonthLabel = nextEndDate.toLocaleDateString('en-US', { month: 'long' });
-    const name = monthLabel === endMonthLabel ? `${monthLabel} ${startDay} – ${nextEndDate.getDate()}, ${year}` : `${monthLabel} ${startDay} – ${endMonthLabel} ${nextEndDate.getDate()}, ${year}`;
-    const newPeriod: PayrollPeriod = { id: `period_${year}_${String(month + 1).padStart(2, '0')}_${cutoffNumber}`, cycle: 'semi_monthly', name, startDate: nextStart, endDate: nextEnd, payoutDate, status: 'projected' };
-    const reloadKey = `worksphere_auto_payroll_reloaded_${newPeriod.id}`;
-    if (sessionStorage.getItem(reloadKey) === '1') return;
+    const name = monthLabel === endMonthLabel
+      ? `${monthLabel} ${startDay} – ${nextEndDate.getDate()}, ${year}`
+      : `${monthLabel} ${startDay} – ${endMonthLabel} ${nextEndDate.getDate()}, ${year}`;
+
+    const newPeriod: PayrollPeriod = {
+      id: `period_${year}_${String(month + 1).padStart(2, '0')}_${cutoffNumber}`,
+      cycle: 'semi_monthly',
+      name,
+      startDate: nextStart,
+      endDate: nextEnd,
+      payoutDate,
+      status: 'projected',
+    };
+
     runningRef.current = true;
     const nextPeriods = [...payrollPeriods, newPeriod].sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+    // Persist both browser fallback state and shared Netlify state first.
     localStorage.setItem('worksphere_cv_payroll_periods', JSON.stringify(nextPeriods));
-    saveAppState({ businesses, users, employees, compensations, schedules, dateSchedules, attendanceRecords, overtimeRecords, holidays, incentivePrograms, deductionTypes, employeeDeductions, payrollPeriods: nextPeriods, payrollRecords, auditLogs, notifications, systemSettings })
-      .then(() => { sessionStorage.setItem(reloadKey, '1'); window.location.reload(); })
-      .catch((error) => { runningRef.current = false; console.error('Failed to auto-create next payroll period', error); });
-  }, [isHydrated, payrollPeriods, businesses, users, employees, compensations, schedules, dateSchedules, attendanceRecords, overtimeRecords, holidays, incentivePrograms, deductionTypes, employeeDeductions, payrollRecords, auditLogs, notifications, systemSettings]);
+    saveAppState({
+      businesses,
+      users,
+      employees,
+      compensations,
+      schedules,
+      dateSchedules,
+      attendanceRecords,
+      overtimeRecords,
+      holidays,
+      incentivePrograms,
+      deductionTypes,
+      employeeDeductions,
+      payrollPeriods: nextPeriods,
+      payrollRecords,
+      auditLogs,
+      notifications,
+      systemSettings,
+    })
+      .then(() => {
+        // Refresh React context in-place so the new period immediately appears
+        // in payroll/schedule dropdowns without a browser page reload.
+        onPeriodCreated();
+      })
+      .catch((error) => {
+        runningRef.current = false;
+        console.error('Failed to auto-create next payroll period', error);
+      });
+  }, [
+    isHydrated,
+    payrollPeriods,
+    businesses,
+    users,
+    employees,
+    compensations,
+    schedules,
+    dateSchedules,
+    attendanceRecords,
+    overtimeRecords,
+    holidays,
+    incentivePrograms,
+    deductionTypes,
+    employeeDeductions,
+    payrollRecords,
+    auditLogs,
+    notifications,
+    systemSettings,
+    onPeriodCreated,
+  ]);
 
   return null;
 };
@@ -130,6 +234,15 @@ const AuthenticatedApp: React.FC = () => {
 };
 
 export default function App() {
-  // AutomaticNextPayrollPeriod is intentionally disabled while the app loading issue is isolated.
-  return <AppProvider><AuthenticatedApp /></AppProvider>;
+  const [providerVersion, setProviderVersion] = useState(0);
+  const handlePeriodCreated = React.useCallback(() => {
+    setProviderVersion((version) => version + 1);
+  }, []);
+
+  return (
+    <AppProvider key={providerVersion}>
+      <AutomaticNextPayrollPeriod onPeriodCreated={handlePeriodCreated} />
+      <AuthenticatedApp />
+    </AppProvider>
+  );
 }
