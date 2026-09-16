@@ -56,6 +56,11 @@ export const AttendanceManagement: React.FC = () => {
     const emp = employees.find((e) => e.id === rec.employeeId);
     if (!emp) return false;
 
+    // Employees may only view their own attendance records.
+    if (currentUser.role === 'employee' && rec.employeeId !== currentUser.id) {
+      return false;
+    }
+
     // Scoped for business admin
     if (currentUser.role === 'business_admin' && currentUser.businessId !== 'all') {
       if (emp.businessId !== currentUser.businessId) return false;
