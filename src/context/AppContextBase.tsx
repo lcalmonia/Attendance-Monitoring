@@ -161,6 +161,66 @@ function saveStorage<T>(key: string, value: T): void {
   }
 }
 
+const formatLocalDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+const parseLocalDate = (value: string) => new Date(`${value}T12:00:00`);
+
+const addLocalDays = (date: Date, days: number) => {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+};
+
+/**
+ * Returns the next semi-monthly payroll period when it is missing.
+ * This is deliberately a pure calculation: the provider owns the state
+ * update and its normal persistence effect owns the remote save.
+ */
+const buildNextPayrollPeriod = (periods: PayrollPeriod[], today: Date): PayrollPeriod | null => {
+  const sorted = [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  const todayStr = formatLocalDate(today);
+  const current = sorted.find((period) => period.startDate <= todayStr && todayStr <= period.endDate);
+  const previousOrCurrent = current || [...sorted]
+    .filter((period) => period.endDate < todayStr)
+    .sort((a, b) => b.endDate.localeCompare(a.endDate))[0];
+
+  if (!previousOrCurrent || previousOrCurrent.cycle !== 'semi_monthly') return null;
+
+  const nextStartDate = addLocalDays(parseLocalDate(previousOrCurrent.endDate), 1);
+  const startDay = nextStartDate.getDate();
+  const year = nextStartDate.getFullYear();
+  const month = nextStartDate.getMonth();
+  const nextEndDate = startDay <= 15
+    ? new Date(year, month, 15, 12)
+    : new Date(year, month + 1, 0, 12);
+  const nextStart = formatLocalDate(nextStartDate);
+  const nextEnd = formatLocalDate(nextEndDate);
+
+  if (periods.some((period) => period.startDate === nextStart && period.endDate === nextEnd)) return null;
+
+  const isFirstCutoff = startDay <= 15;
+  const cutoffNumber = isFirstCutoff ? 1 : 2;
+  const payoutDate = isFirstCutoff
+    ? formatLocalDate(new Date(year, month, 20, 12))
+    : formatLocalDate(new Date(year, month + 1, 5, 12));
+  const monthLabel = nextStartDate.toLocaleDateString('en-US', { month: 'long' });
+  const endMonthLabel = nextEndDate.toLocaleDateString('en-US', { month: 'long' });
+  const name = monthLabel === endMonthLabel
+    ? `${monthLabel} ${startDay} – ${nextEndDate.getDate()}, ${year}`
+    : `${monthLabel} ${startDay} – ${endMonthLabel} ${nextEndDate.getDate()}, ${year}`;
+
+  return {
+    id: `period_${year}_${String(month + 1).padStart(2, '0')}_${cutoffNumber}`,
+    cycle: 'semi_monthly',
+    name,
+    startDate: nextStart,
+    endDate: nextEnd,
+    payoutDate,
+    status: 'projected',
+  };
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // State initialization from localStorage or seed data
   const [businesses, setBusinesses] = useState<Business[]>(() =>
@@ -262,6 +322,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => { cancelled = true; };
   }, []);
+
+  // Generate the next semi-monthly period as part of the provider's real state.
+  // There is no page reload, no provider remount, and no second persistence path.
+  useEffect(() => {
+    if (!isHydrated) return;
+
+    setPayrollPeriods((prev) => {
+      const nextPeriod = buildNextPayrollPeriod(prev, new Date());
+      if (!nextPeriod) return prev;
+      return [...prev, nextPeriod].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    });
+  }, [isHydrated]);
 
   useEffect(() => {
     if (!isHydrated) return;
