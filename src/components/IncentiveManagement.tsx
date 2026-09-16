@@ -24,8 +24,6 @@ export const IncentiveManagement: React.FC = () => {
     businesses,
     attendanceRecords,
     payrollPeriods,
-    schedules,
-    dateSchedules,
     addIncentiveProgram,
     updateIncentiveProgram,
     deleteIncentiveProgram,
@@ -41,6 +39,7 @@ export const IncentiveManagement: React.FC = () => {
   const [requiresNoLate, setRequiresNoLate] = useState(true);
   const [requiresNoAbsence, setRequiresNoAbsence] = useState(true);
   const [disqualifyOnValidAbsence, setDisqualifyOnValidAbsence] = useState(true);
+  const [minPresentDays, setMinPresentDays] = useState(10);
   const [targetBusinessId, setTargetBusinessId] = useState('all');
   const [status, setStatus] = useState<'active' | 'inactive'>('active');
 
@@ -72,6 +71,7 @@ export const IncentiveManagement: React.FC = () => {
     setRequiresNoLate(true);
     setRequiresNoAbsence(true);
     setDisqualifyOnValidAbsence(true);
+    setMinPresentDays(10);
     setTargetBusinessId('all');
     setStatus('active');
     setShowModal(true);
@@ -85,6 +85,7 @@ export const IncentiveManagement: React.FC = () => {
     setRequiresNoLate(prog.conditions?.requireNoLate ?? true);
     setRequiresNoAbsence(prog.conditions?.requireNoAbsence ?? true);
     setDisqualifyOnValidAbsence(prog.conditions?.disqualifyOnValidAbsence ?? true);
+    setMinPresentDays(prog.conditions?.minDaysPresent ?? 10);
     setTargetBusinessId(prog.applicableBusinessId || 'all');
     setStatus(prog.status || 'active');
     setShowModal(true);
@@ -102,6 +103,7 @@ export const IncentiveManagement: React.FC = () => {
           requireNoLate: requiresNoLate,
           requireNoAbsence: requiresNoAbsence,
           disqualifyOnValidAbsence,
+          minDaysPresent: minPresentDays,
         },
         status,
       });
@@ -116,6 +118,7 @@ export const IncentiveManagement: React.FC = () => {
           requireNoLate: requiresNoLate,
           requireNoAbsence: requiresNoAbsence,
           disqualifyOnValidAbsence,
+          minDaysPresent: minPresentDays,
         },
         effectiveDate: new Date().toISOString().slice(0, 10),
         status,
@@ -218,14 +221,12 @@ export const IncentiveManagement: React.FC = () => {
                       : 'Authorized leave excused'}
                   </span>
                 </div>
-                {prog.conditions?.requireNoAbsence && (
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-400" />
-                    <span>
-                      <strong>Required Duty Attendance:</strong> Must be present on every required scheduled duty day
-                    </span>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-400" />
+                  <span>
+                    <strong>Minimum Duty Threshold:</strong> Minimum {prog.conditions?.minDaysPresent ?? 1} days present in period
+                  </span>
+                </div>
               </div>
 
               <div className="text-[11px] text-slate-400 flex items-center justify-between pt-2 border-t border-slate-800/80">
@@ -325,31 +326,8 @@ export const IncentiveManagement: React.FC = () => {
                     r.date <= activePeriod.endDate
                 );
 
-                const explicitSchedules = dateSchedules.filter(
-                  (entry) =>
-                    entry.employeeId === emp.id &&
-                    entry.payrollPeriodId === activePeriod.id
-                );
-                let requiredDutyDates = explicitSchedules
-                  .filter((entry) => entry.enabled)
-                  .map((entry) => entry.date);
-                if (explicitSchedules.length === 0) {
-                  const employeeSchedule = schedules.find((item) => item.employeeId === emp.id);
-                  if (employeeSchedule) {
-                    const cursor = new Date(activePeriod.startDate + 'T12:00:00');
-                    const endDate = new Date(activePeriod.endDate + 'T12:00:00');
-                    while (cursor <= endDate) {
-                      const daily = employeeSchedule.dailySchedules?.find((item) => item.day === cursor.getDay());
-                      const enabled = daily ? daily.enabled : employeeSchedule.requiredDutyDays.includes(cursor.getDay());
-                      if (enabled) requiredDutyDates.push(cursor.toISOString().slice(0, 10));
-                      cursor.setDate(cursor.getDate() + 1);
-                    }
-                  }
-                }
-                const today = new Date();
-                const asOfDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
                 const evalResult = prog
-                  ? evaluateIncentiveQualification(prog, empAtt, requiredDutyDates, asOfDate)
+                  ? evaluateIncentiveQualification(prog, empAtt)
                   : { isQualified: false, reason: 'No active incentive program applicable to this employee' };
 
                 const totalLateMins = empAtt.reduce((acc, r) => acc + r.lateMinutes, 0);
@@ -458,20 +436,30 @@ export const IncentiveManagement: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-400 mb-1 font-semibold">Incentive Amount (₱):</label>
-                <input
-                  type="number"
-                  step="50"
-                  min="50"
-                  required
-                  value={amount}
-                  onChange={(e) => setAmount(Number(e.target.value))}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
-                />
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Perfect attendance is evaluated against the employee's required scheduled duty days, not a minimum present-day count.
-                </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Incentive Amount (₱):</label>
+                  <input
+                    type="number"
+                    step="50"
+                    min="50"
+                    required
+                    value={amount}
+                    onChange={(e) => setAmount(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1 font-semibold">Min. Present Days:</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={minPresentDays}
+                    onChange={(e) => setMinPresentDays(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -521,7 +509,7 @@ export const IncentiveManagement: React.FC = () => {
                     onChange={(e) => setRequiresNoAbsence(e.target.checked)}
                     className="rounded border-slate-700 text-blue-600 focus:ring-0"
                   />
-                  <span>Disqualify if employee misses any required scheduled duty day</span>
+                  <span>Disqualify on any absence</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer text-slate-300">
                   <input

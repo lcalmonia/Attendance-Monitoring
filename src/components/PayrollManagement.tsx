@@ -29,7 +29,6 @@ export const PayrollManagement: React.FC = () => {
     businesses,
     compensations,
     schedules,
-    dateSchedules,
     attendanceRecords,
     overtimeRecords,
     holidays,
@@ -99,7 +98,6 @@ export const PayrollManagement: React.FC = () => {
         holidays,
         incentivePrograms,
         employeeDeductions,
-        dateSchedules,
       });
     });
 
