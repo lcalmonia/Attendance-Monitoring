@@ -30,12 +30,30 @@ async function api(path: string, options: RequestInit = {}) {
         ...(options.headers || {}),
       },
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Request failed.");
+
+    const rawBody = await response.text();
+    let data: Record<string, unknown> = {};
+    if (rawBody) {
+      try {
+        data = JSON.parse(rawBody) as Record<string, unknown>;
+      } catch {
+        // Keep the raw response available for a useful HTTP error below.
+      }
+    }
+
+    if (!response.ok) {
+      const serverError = typeof data.error === "string" ? data.error : "";
+      const fallback = rawBody.trim().replace(/\s+/g, " ").slice(0, 180);
+      throw new Error(serverError || fallback || `Request failed (HTTP ${response.status}).`);
+    }
+
     return data;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Authentication service timed out. Please try again.");
+    }
+    if (error instanceof TypeError) {
+      throw new Error("Unable to reach the authentication service. Please check your connection and try again.");
     }
     throw error;
   } finally {
@@ -48,7 +66,7 @@ export const authApi = {
   setup: (payload: Record<string, string>) => api("/api/auth/setup", { method: "POST", body: JSON.stringify(payload) }),
   login: async (loginId: string, password: string) => {
     const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ loginId, password }) });
-    setAuthToken(data.token);
+    setAuthToken(String(data.token));
     return data;
   },
   session: () => api("/api/auth/session") as Promise<Session>,
@@ -56,11 +74,10 @@ export const authApi = {
     try { await api("/api/auth/logout", { method: "POST" }); } finally { clearAuthToken(); }
   },
   changePassword: (currentPassword: string, newPassword: string) =>
-    api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),
+    api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword })),
   provision: (userId: string, employeeId: string, temporaryPassword?: string, mobileNumber?: string) =>
     api("/api/auth/provision", { method: "POST", body: JSON.stringify({ userId, employeeId, temporaryPassword, mobileNumber }) }),
-  deleteAccount: (userId: string) =>
-    api("/api/auth/delete", { method: "POST", body: JSON.stringify({ userId }) }),
+  deleteAccount: (userId: string) => api("/api/auth/delete", { method: "POST", body: JSON.stringify({ userId }) }),
   syncLogin: (userId: string, employeeId: string, mobileNumber: string) =>
     api("/api/auth/sync-login", { method: "POST", body: JSON.stringify({ userId, employeeId, mobileNumber }) }),
 };
