@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { AppProvider as BaseAppProvider, useApp as useBaseApp } from './AppContextBase';
-import { saveAppState } from '../services/netlifyState';
+import { deleteAttendanceRecord, upsertAttendanceRecord } from '../services/netlifyState';
+import { AttendanceRecord } from '../types';
 
 type AppContextValue = ReturnType<typeof useBaseApp>;
-const AppContext = createContext<AppContextValue | undefined>(undefined);
+type PendingAttendance = { employeeId: string; recordId?: string; source: 'clock' | 'admin' };
 
 const toMinutes = (value: string) => {
   const [hours, minutes] = value.slice(0, 5).split(':').map(Number);
@@ -65,119 +66,73 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const base = useBaseApp();
+  const syncTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
-  // Attendance edits must be persisted immediately as a complete app-state
-  // snapshot. The base provider also performs its normal debounced save, but
-  // waiting for that debounce made an edit vulnerable to a refresh or another
-  // hydration/save cycle restoring the old attendance record.
-  const persistAttendanceAdjustment = (
-    recordId: string,
-    updates: Parameters<AppContextValue['adjustAttendance']>[1],
-    reason: string
-  ) => {
-    const current = base.attendanceRecords.find((record) => record.id === recordId);
-    if (!current) return;
-
-    let persistedUpdates = { ...updates };
-
-    // If Time In is edited, calculate the derived attendance fields here too.
-    // This prevents the immediate save from briefly persisting the old
-    // NOT_TIMED_IN status or stale late minutes before the recalculation effect runs.
-    if (updates.timeIn) {
-      const schedule = getScheduleForDate(base, current.employeeId, current.date);
-      const reqIn = schedule?.requiredTimeIn;
-      const reqOut = schedule?.requiredTimeOut;
-
-      if (schedule && reqIn && reqOut) {
-        const scheduledDay = !!schedule.enabled;
-        const actualIn = toMinutes(updates.timeIn);
-        const scheduledIn = toMinutes(reqIn);
-        const scheduledOut = toMinutes(reqOut);
-        const overnight = isOvernight(reqIn, reqOut);
-        const outsideTime = scheduledDay && (
-          actualIn < scheduledIn || (!overnight && actualIn > scheduledOut)
-        );
-        const compensation = base.compensations.find((item) => item.employeeId === current.employeeId);
-        const lateMinutes = scheduledDay && !outsideTime ? Math.max(0, actualIn - scheduledIn) : 0;
-        const lateOccurrences = lateMinutes > 0 ? 1 : 0;
-        const lateDeductions = Number((lateMinutes * (compensation?.perMinuteRate || 0)).toFixed(2));
-
-        let status: typeof current.status;
-        if (!scheduledDay) {
-          status = 'outside_scheduled_day';
-        } else if (outsideTime) {
-          status = 'outside_scheduled_time';
-        } else if (!updates.timeOut && !current.timeOut) {
-          status = 'present';
-        } else {
-          const effectiveTimeOut = updates.timeOut || current.timeOut;
-          if (!effectiveTimeOut) {
-            status = 'present';
-          } else {
-            let actualOut = toMinutes(effectiveTimeOut);
-            let normalizedReqOut = scheduledOut;
-            if (overnight && actualOut <= actualIn) actualOut += 24 * 60;
-            if (overnight && normalizedReqOut <= scheduledIn) normalizedReqOut += 24 * 60;
-            const countedStart = Math.max(actualIn, scheduledIn);
-            const countedEnd = Math.min(actualOut, normalizedReqOut);
-            const breakMinutes = current.breakOut && (updates.breakIn || current.breakIn)
-              ? elapsedMinutes(current.breakOut.slice(0, 5), (updates.breakIn || current.breakIn)!.slice(0, 5))
-              : current.actualBreakMinutes || 0;
-            const totalWorkHours = Number((Math.max(0, countedEnd - countedStart - breakMinutes) / 60).toFixed(2));
-            status = totalWorkHours < 4 ? 'incomplete_duty' : 'present';
-            persistedUpdates = { ...persistedUpdates, totalWorkHours };
-          }
-        }
-
-        persistedUpdates = {
-          ...persistedUpdates,
-          lateMinutes,
-          lateOccurrences,
-          lateDeductions,
-          status,
-        };
-      }
+  const readLocalAttendance = (employeeId: string, recordId?: string): AttendanceRecord | undefined => {
+    try {
+      const raw = localStorage.getItem('worksphere_cv_attendance');
+      if (!raw) return undefined;
+      const records = JSON.parse(raw);
+      if (!Array.isArray(records)) return undefined;
+      return records
+        .filter((record): record is AttendanceRecord =>
+          !!record && typeof record === 'object' &&
+          typeof record.id === 'string' &&
+          typeof record.employeeId === 'string' &&
+          record.employeeId === employeeId &&
+          (!recordId || record.id === recordId)
+        )
+        .sort((a, b) => `${a.date}_${a.timeIn || ''}`.localeCompare(`${b.date}_${b.timeIn || ''}`))
+        .at(-1);
+    } catch {
+      return undefined;
     }
-
-    const adjustedRecord = {
-      ...current,
-      ...persistedUpdates,
-      isAdjusted: true,
-      adjustedBy: base.currentUser.fullName,
-      adjustedReason: reason,
-      adjustedAt: new Date().toISOString(),
-    };
-
-    // Update React state first so the screen changes immediately.
-    base.adjustAttendance(recordId, persistedUpdates, reason);
-
-    if (!base.isHydrated) return;
-
-    const nextAttendanceRecords = base.attendanceRecords.map((record) =>
-      record.id === recordId ? adjustedRecord : record
-    );
-
-    void saveAppState({
-      businesses: base.businesses,
-      users: base.users,
-      employees: base.employees,
-      compensations: base.compensations,
-      schedules: base.schedules,
-      dateSchedules: base.dateSchedules,
-      attendanceRecords: nextAttendanceRecords,
-      overtimeRecords: base.overtimeRecords,
-      holidays: base.holidays,
-      incentivePrograms: base.incentivePrograms,
-      deductionTypes: base.deductionTypes,
-      employeeDeductions: base.employeeDeductions,
-      payrollPeriods: base.payrollPeriods,
-      payrollRecords: base.payrollRecords,
-      auditLogs: base.auditLogs,
-      notifications: base.notifications,
-      systemSettings: base.systemSettings,
-    }).catch((error) => console.error('Failed to immediately persist attendance adjustment', error));
   };
 
+  // Retry briefly because React effects and shared-state hydration can race.
+  // The fallback reads the local attendance cache directly, so a clock-in that
+  // happened immediately before hydration cannot disappear before it reaches
+  // the record-level API.
+  const scheduleAttendanceSync = (item: PendingAttendance, attempt = 0) => {
+    const key = `${item.source}:${item.recordId || item.employeeId}`;
+    const existingTimer = syncTimersRef.current.get(key);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    const timer = setTimeout(() => {
+      syncTimersRef.current.delete(key);
+
+      const stateRecord = item.recordId
+        ? base.attendanceRecords.find((record) => record.id === item.recordId)
+        : base.attendanceRecords
+            .filter((record) => record.employeeId === item.employeeId)
+            .sort((a, b) => `${a.date}_${a.timeIn || ''}`.localeCompare(`${b.date}_${b.timeIn || ''}`))
+            .at(-1);
+      const record = stateRecord || readLocalAttendance(item.employeeId, item.recordId);
+
+      if (!record) {
+        if (attempt < 20) scheduleAttendanceSync(item, attempt + 1);
+        else console.error('Attendance synchronization gave up after retries', item);
+        return;
+      }
+
+      void upsertAttendanceRecord(
+        record as AttendanceRecord & { id: string; employeeId: string; businessId: string },
+        item.source
+      ).catch((error) => {
+        console.error('Immediate attendance synchronization failed', error);
+        if (attempt < 20) scheduleAttendanceSync(item, attempt + 1);
+      });
+    }, attempt === 0 ? 0 : 100);
+
+    syncTimersRef.current.set(key, timer);
+  };
+
+  useEffect(() => () => {
+    for (const timer of syncTimersRef.current.values()) clearTimeout(timer);
+    syncTimersRef.current.clear();
+  }, []);
+
+  // Preserve the existing overnight normalization behavior from the tested attendance flow.
   useEffect(() => {
     base.attendanceRecords.forEach((record) => {
       if (!record.timeIn || record.timeOut || record.status !== 'outside_scheduled_time') return;
@@ -188,6 +143,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
         { status: 'not_timed_in', remarks: undefined },
         'Automatic overnight shift clocking normalization'
       );
+      scheduleAttendanceSync({ employeeId: record.employeeId, recordId: record.id, source: 'admin' });
     });
   }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods]);
 
@@ -251,13 +207,143 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
         { lateMinutes, lateOccurrences, lateDeductions, status },
         'Automatic attendance recalculation after Time In adjustment'
       );
+      scheduleAttendanceSync({ employeeId: record.employeeId, recordId: record.id, source: 'admin' });
     });
   }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods, base.compensations]);
 
-  // The stored attendance record keeps the shift-start date. After midnight,
-  // employee-dashboard find() lookups can still resolve the active overnight
-  // shift as "today" without injecting a synthetic record into filter/reduce
-  // collections used by payroll calculations.
+  const adjustAttendance = (recordId: string, updates: Partial<AttendanceRecord>, reason: string) => {
+    const target = base.attendanceRecords.find((record) => record.id === recordId);
+    if (!target) return;
+
+    base.adjustAttendance(recordId, updates, reason);
+    scheduleAttendanceSync({ employeeId: target.employeeId, recordId, source: 'admin' });
+  };
+
+  const deleteAttendance = (recordId: string, reason: string) => {
+    const result = base.deleteAttendance(recordId, reason);
+    if (result.success) {
+      void deleteAttendanceRecord(recordId).catch((error) => {
+        console.error('Immediate attendance deletion synchronization failed', error);
+      });
+    }
+    return result;
+  };
+
+  const recordAttendance = (employeeId: string, action: Parameters<AppContextValue['recordAttendance']>[1]) => {
+    const now = new Date();
+    const today = formatDate(now);
+    const overnight = getOvernightRecord(base, employeeId, today);
+
+    if (!overnight) {
+      const existingToday = base.attendanceRecords.find(
+        (record) => record.employeeId === employeeId && record.date === today
+      );
+      const result = base.recordAttendance(employeeId, action);
+      if (result.success) {
+        scheduleAttendanceSync({
+          employeeId,
+          recordId: action === 'time_in' ? undefined : existingToday?.id,
+          source: 'clock',
+        });
+      }
+      return result;
+    }
+
+    const { record, schedule } = overnight;
+    const comp = base.compensations.find((item) => item.employeeId === employeeId);
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const timeHHMM = timeStr.slice(0, 5);
+
+    if (action === 'break_out') {
+      if (record.breakOut) return { success: false, message: 'Break Out has already been recorded.' };
+      adjustAttendance(record.id, { breakOut: timeStr }, 'Overnight shift Break Out recorded after midnight');
+      return { success: true, message: `Break Out recorded at ${timeStr}.` };
+    }
+
+    if (action === 'break_in') {
+      if (!record.breakOut) return { success: false, message: 'Please record Break Out before Break In.' };
+      if (record.breakIn) return { success: false, message: 'Break In has already been recorded.' };
+      const breakMins = elapsedMinutes(record.breakOut.slice(0, 5), timeHHMM);
+      const overBreakMinutes = Math.max(0, breakMins - record.requiredBreakMinutes);
+      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
+      adjustAttendance(
+        record.id,
+        { breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions },
+        'Overnight shift Break In recorded after midnight'
+      );
+      return { success: true, message: `Break In recorded at ${timeStr}.` };
+    }
+
+    if (action === 'time_out') {
+      if (record.timeOut) return { success: false, message: 'Time Out has already been recorded.' };
+      if (!schedule?.requiredTimeIn || !schedule.requiredTimeOut) return base.recordAttendance(employeeId, action);
+
+      const reqIn = toMinutes(schedule.requiredTimeIn);
+      let reqOut = toMinutes(schedule.requiredTimeOut);
+      if (reqOut <= reqIn) reqOut += 24 * 60;
+
+      const actualIn = toMinutes(record.timeIn!);
+      let actualOut = toMinutes(timeHHMM);
+      if (actualOut <= actualIn) actualOut += 24 * 60;
+
+      if (actualOut < reqIn) {
+        return { success: false, message: 'Time Out is too early for the scheduled overnight shift.' };
+      }
+
+      const outsideTime = actualIn < reqIn || actualIn > reqOut || actualOut < reqIn;
+      const countedStart = Math.max(actualIn, reqIn);
+      const countedEnd = Math.min(actualOut, reqOut);
+      const windowMinutes = Math.max(0, countedEnd - countedStart);
+      const actualBreakMinutes = record.breakOut
+        ? record.breakIn
+          ? elapsedMinutes(record.breakOut.slice(0, 5), record.breakIn.slice(0, 5))
+          : elapsedMinutes(record.breakOut.slice(0, 5), timeHHMM)
+        : 0;
+      const overBreakMinutes = Math.max(0, actualBreakMinutes - record.requiredBreakMinutes);
+      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
+      const totalWorkMins = Math.max(0, windowMinutes - actualBreakMinutes);
+      const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
+      const undertimeMinutes = Math.max(0, reqOut - actualOut);
+      const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
+      const status = outsideTime
+        ? 'outside_scheduled_time'
+        : totalWorkHours < 4
+        ? 'incomplete_duty'
+        : 'present';
+
+      const holiday = base.holidays.find((item) => item.date === record.date);
+      const holidayDutyPay = record.isHoliday && record.holidayRateMultiplier && comp
+        ? Number((comp.dailyRate * (record.holidayRateMultiplier - 1)).toFixed(2))
+        : 0;
+
+      adjustAttendance(
+        record.id,
+        {
+          timeOut: timeStr,
+          actualBreakMinutes,
+          overBreakMinutes,
+          overBreakDeductions,
+          totalWorkHours,
+          undertimeMinutes,
+          undertimeDeductions,
+          holidayDutyPay,
+          status,
+          isHoliday: record.isHoliday ?? !!holiday,
+        },
+        'Automatic overnight shift Time Out completion'
+      );
+
+      return {
+        success: true,
+        message: status === 'present'
+          ? `Time Out recorded at ${timeStr} (${totalWorkHours} valid scheduled hours). Shift completed.`
+          : `Time Out recorded at ${timeStr}. Attendance status: ${status.replace(/_/g, ' ')}.`,
+      };
+    }
+
+    return base.recordAttendance(employeeId, action);
+  };
+
   const employeeAttendanceView = useMemo(() => {
     if (base.currentUser.role !== 'employee') return base.attendanceRecords;
 
@@ -298,83 +384,19 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, [base.attendanceRecords, base.currentUser, base.schedules, base.dateSchedules, base.payrollPeriods]);
 
-  const recordAttendance = (employeeId: string, action: Parameters<AppContextValue['recordAttendance']>[1]) => {
-    const now = new Date();
-    const today = formatDate(now);
-    const overnight = getOvernightRecord(base, employeeId, today);
-
-    if (!overnight) return base.recordAttendance(employeeId, action);
-
-    const { record, schedule } = overnight;
-    const comp = base.compensations.find((item) => item.employeeId === employeeId);
-    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    const timeHHMM = timeStr.slice(0, 5);
-
-    if (action === 'break_out') {
-      if (record.breakOut) return { success: false, message: 'Break Out has already been recorded.' };
-      base.adjustAttendance(record.id, { breakOut: timeStr }, 'Overnight shift Break Out recorded after midnight');
-      return { success: true, message: `Break Out recorded at ${timeStr}.` };
-    }
-
-    if (action === 'break_in') {
-      if (!record.breakOut) return { success: false, message: 'Please record Break Out before Break In.' };
-      if (record.breakIn) return { success: false, message: 'Break In has already been recorded.' };
-      const breakMins = elapsedMinutes(record.breakOut.slice(0, 5), timeHHMM);
-      const overBreakMinutes = Math.max(0, breakMins - record.requiredBreakMinutes);
-      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      base.adjustAttendance(record.id, { breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions }, 'Overnight shift Break In recorded after midnight');
-      return { success: true, message: `Break In recorded at ${timeStr}.` };
-    }
-
-    if (action === 'time_out') {
-      if (record.timeOut) return { success: false, message: 'Time Out has already been recorded.' };
-      if (!schedule?.requiredTimeIn || !schedule.requiredTimeOut) return base.recordAttendance(employeeId, action);
-
-      const reqIn = toMinutes(schedule.requiredTimeIn);
-      let reqOut = toMinutes(schedule.requiredTimeOut);
-      if (reqOut <= reqIn) reqOut += 24 * 60;
-      const actualIn = toMinutes(record.timeIn!);
-      let actualOut = toMinutes(timeHHMM);
-      if (actualOut <= actualIn) actualOut += 24 * 60;
-      if (actualOut < reqIn) return { success: false, message: 'Time Out is too early for the scheduled overnight shift.' };
-
-      const outsideTime = actualIn < reqIn || actualIn > reqOut || actualOut < reqIn;
-      const countedStart = Math.max(actualIn, reqIn);
-      const countedEnd = Math.min(actualOut, reqOut);
-      const windowMinutes = Math.max(0, countedEnd - countedStart);
-      const actualBreakMinutes = record.breakOut
-        ? record.breakIn
-          ? elapsedMinutes(record.breakOut.slice(0, 5), record.breakIn.slice(0, 5))
-          : elapsedMinutes(record.breakOut.slice(0, 5), timeHHMM)
-        : 0;
-      const overBreakMinutes = Math.max(0, actualBreakMinutes - record.requiredBreakMinutes);
-      const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      const totalWorkMins = Math.max(0, windowMinutes - actualBreakMinutes);
-      const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
-      const undertimeMinutes = Math.max(0, reqOut - actualOut);
-      const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      const status = outsideTime ? 'outside_scheduled_time' : totalWorkHours < 4 ? 'incomplete_duty' : 'present';
-      const holiday = base.holidays.find((item) => item.date === record.date);
-      const holidayDutyPay = record.isHoliday && record.holidayRateMultiplier && comp ? Number((comp.dailyRate * (record.holidayRateMultiplier - 1)).toFixed(2)) : 0;
-
-      base.adjustAttendance(
-        record.id,
-        { timeOut: timeStr, actualBreakMinutes, overBreakMinutes, overBreakDeductions, totalWorkHours, undertimeMinutes, undertimeDeductions, holidayDutyPay, status, isHoliday: record.isHoliday ?? !!holiday },
-        'Automatic overnight shift Time Out completion'
-      );
-
-      return {
-        success: true,
-        message: status === 'present'
-          ? `Time Out recorded at ${timeStr} (${totalWorkHours} valid scheduled hours). Shift completed.`
-          : `Time Out recorded at ${timeStr}. Attendance status: ${status.replace(/_/g, ' ')}.`,
-      };
-    }
-
-    return base.recordAttendance(employeeId, action);
-  };
-
-  return <AppContext.Provider value={{ ...base, attendanceRecords: employeeAttendanceView, adjustAttendance: persistAttendanceAdjustment, recordAttendance }}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider
+      value={{
+        ...base,
+        attendanceRecords: employeeAttendanceView,
+        recordAttendance,
+        adjustAttendance,
+        deleteAttendance,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
 };
 
 export const useApp = () => {
