@@ -28,9 +28,57 @@ export default async (req: Request) => {
       return Response.json({ error: "State must be a JSON object." }, { status: 400 });
     }
 
+    const rows = await db.sql<AppStateRow>`
+      SELECT state, updated_at
+      FROM app_state
+      WHERE id = 'default'
+      LIMIT 1
+    `;
+
+    const existingState = (rows[0]?.state && typeof rows[0].state === "object" && !Array.isArray(rows[0].state))
+      ? rows[0].state as Record<string, unknown>
+      : {};
+
+    const incomingAttendance = Array.isArray(body.attendanceRecords)
+      ? body.attendanceRecords as Record<string, unknown>[]
+      : null;
+    const existingAttendance = Array.isArray(existingState.attendanceRecords)
+      ? existingState.attendanceRecords as Record<string, unknown>[]
+      : [];
+
+    let mergedAttendance: Record<string, unknown>[] | null = null;
+    if (incomingAttendance) {
+      const byId = new Map<string, Record<string, unknown>>();
+      existingAttendance.forEach((record) => {
+        if (typeof record.id === "string") byId.set(record.id, record);
+      });
+
+      incomingAttendance.forEach((incoming) => {
+        const id = typeof incoming.id === "string" ? incoming.id : undefined;
+        if (!id) return;
+        const existing = byId.get(id);
+        if (!existing) {
+          byId.set(id, incoming);
+          return;
+        }
+
+        const existingAdjustedAt = typeof existing.adjustedAt === "string" ? existing.adjustedAt : "";
+        const incomingAdjustedAt = typeof incoming.adjustedAt === "string" ? incoming.adjustedAt : "";
+        if (existing.isAdjusted && !incoming.isAdjusted) return;
+        if (existing.isAdjusted && incoming.isAdjusted && existingAdjustedAt > incomingAdjustedAt) return;
+
+        byId.set(id, { ...existing, ...incoming });
+      });
+
+      mergedAttendance = Array.from(byId.values());
+    }
+
+    const nextState: Record<string, unknown> = { ...existingState, ...body };
+    if (mergedAttendance) nextState.attendanceRecords = mergedAttendance;
+
     await db.sql`
       INSERT INTO app_state (id, state, updated_at)
-      VALUES ('default', ${JSON.stringify(body)}::jsonb, NOW())
+      VALUES ('default', ${JSON.stringify(nextState)}::jsonb, NOW())
       ON CONFLICT (id)
       DO UPDATE SET state = EXCLUDED.state, updated_at = NOW()
     `;
