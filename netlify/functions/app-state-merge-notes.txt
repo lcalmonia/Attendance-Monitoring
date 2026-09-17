@@ -1,0 +1,1 @@
+This file documents the shared-state merge strategy used by app-state.ts. Attendance records are merged by record ID to prevent one device's stale full-state save from deleting another device's clock-in. Do not remove that merge behavior without replacing it with an atomic attendance mutation API.
