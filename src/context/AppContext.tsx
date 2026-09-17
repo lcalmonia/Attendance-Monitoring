@@ -89,10 +89,6 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  // Retry briefly because React effects and shared-state hydration can race.
-  // The fallback reads the local attendance cache directly, so a clock-in that
-  // happened immediately before hydration cannot disappear before it reaches
-  // the record-level API.
   const scheduleAttendanceSync = (item: PendingAttendance, attempt = 0) => {
     const key = `${item.source}:${item.recordId || item.employeeId}`;
     const existingTimer = syncTimersRef.current.get(key);
@@ -132,7 +128,6 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     syncTimersRef.current.clear();
   }, []);
 
-  // Preserve the existing overnight normalization behavior from the tested attendance flow.
   useEffect(() => {
     base.attendanceRecords.forEach((record) => {
       if (!record.timeIn || record.timeOut || record.status !== 'outside_scheduled_time') return;
@@ -147,8 +142,6 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods]);
 
-  // Recalculate derived attendance fields after an admin edits Time In.
-  // Date-specific schedules remain authoritative; weekly schedules are only fallback.
   useEffect(() => {
     base.attendanceRecords.forEach((record) => {
       if (!record.isAdjusted || !record.timeIn) return;
@@ -216,7 +209,11 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     if (!target) return;
 
     base.adjustAttendance(recordId, updates, reason);
-    scheduleAttendanceSync({ employeeId: target.employeeId, recordId, source: 'admin' });
+    scheduleAttendanceSync({
+      employeeId: target.employeeId,
+      recordId,
+      source: base.currentUser.role === 'employee' ? 'clock' : 'admin',
+    });
   };
 
   const deleteAttendance = (recordId: string, reason: string) => {
