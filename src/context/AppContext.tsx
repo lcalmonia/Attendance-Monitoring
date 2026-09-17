@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { AppProvider as BaseAppProvider, useApp as useBaseApp } from './AppContextBase';
+import { saveAppState } from '../services/netlifyState';
 
 type AppContextValue = ReturnType<typeof useBaseApp>;
 const AppContext = createContext<AppContextValue | undefined>(undefined);
@@ -64,6 +65,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const base = useBaseApp();
+
+  // Attendance edits must be persisted immediately as a complete app-state
+  // snapshot. The base provider also performs its normal debounced save, but
+  // waiting for that debounce made an edit vulnerable to a refresh or another
+  // hydration/save cycle restoring the old attendance record.
+  const persistAttendanceAdjustment = (
+    recordId: string,
+    updates: Parameters<AppContextValue['adjustAttendance']>[1],
+    reason: string
+  ) => {
+    const current = base.attendanceRecords.find((record) => record.id === recordId);
+    if (!current) return;
+
+    const adjustedRecord = {
+      ...current,
+      ...updates,
+      isAdjusted: true,
+      adjustedBy: base.currentUser.fullName,
+      adjustedReason: reason,
+      adjustedAt: new Date().toISOString(),
+    };
+
+    // Update React state first so the screen changes immediately.
+    base.adjustAttendance(recordId, updates, reason);
+
+    if (!base.isHydrated) return;
+
+    const nextAttendanceRecords = base.attendanceRecords.map((record) =>
+      record.id === recordId ? adjustedRecord : record
+    );
+
+    void saveAppState({
+      businesses: base.businesses,
+      users: base.users,
+      employees: base.employees,
+      compensations: base.compensations,
+      schedules: base.schedules,
+      dateSchedules: base.dateSchedules,
+      attendanceRecords: nextAttendanceRecords,
+      overtimeRecords: base.overtimeRecords,
+      holidays: base.holidays,
+      incentivePrograms: base.incentivePrograms,
+      deductionTypes: base.deductionTypes,
+      employeeDeductions: base.employeeDeductions,
+      payrollPeriods: base.payrollPeriods,
+      payrollRecords: base.payrollRecords,
+      auditLogs: base.auditLogs,
+      notifications: base.notifications,
+      systemSettings: base.systemSettings,
+    }).catch((error) => console.error('Failed to immediately persist attendance adjustment', error));
+  };
 
   useEffect(() => {
     base.attendanceRecords.forEach((record) => {
@@ -261,7 +313,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     return base.recordAttendance(employeeId, action);
   };
 
-  return <AppContext.Provider value={{ ...base, attendanceRecords: employeeAttendanceView, recordAttendance }}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{ ...base, attendanceRecords: employeeAttendanceView, adjustAttendance: persistAttendanceAdjustment, recordAttendance }}>{children}</AppContext.Provider>;
 };
 
 export const useApp = () => {
