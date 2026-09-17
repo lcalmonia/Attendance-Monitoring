@@ -14,6 +14,8 @@ export interface AttendanceMutationRecord {
   [key: string]: unknown;
 }
 
+const APP_STATE_TIMEOUT_MS = 10000;
+
 async function attendanceRequest<T>(init?: RequestInit): Promise<T> {
   const response = await fetch("/api/attendance-mutation", {
     credentials: "same-origin",
@@ -70,11 +72,27 @@ function mergeLocalAttendance(state: PersistedAppState): PersistedAppState {
 }
 
 export async function loadAppState(): Promise<PersistedAppState | null> {
-  const response = await fetch("/api/app-state", { credentials: "same-origin", headers: authHeaders() });
-  if (!response.ok) throw new Error(`Unable to load shared application state (${response.status}).`);
-  const payload = await response.json();
-  const state = payload?.state && typeof payload.state === "object" ? payload.state as PersistedAppState : null;
-  return state ? mergeLocalAttendance(state) : state;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), APP_STATE_TIMEOUT_MS);
+
+  try {
+    const response = await fetch("/api/app-state", {
+      credentials: "same-origin",
+      headers: authHeaders(),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Unable to load shared application state (${response.status}).`);
+    const payload = await response.json();
+    const state = payload?.state && typeof payload.state === "object" ? payload.state as PersistedAppState : null;
+    return state ? mergeLocalAttendance(state) : state;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Shared application state timed out; continuing with local data.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function saveAppState(state: PersistedAppState): Promise<void> {
@@ -103,9 +121,4 @@ export async function deleteAttendanceRecord(recordId: string): Promise<void> {
     method: "POST",
     body: JSON.stringify({ action: "delete", recordId }),
   });
-}
-
-export async function loadAttendanceRecords(): Promise<AttendanceMutationRecord[]> {
-  const payload = await attendanceRequest<{ records?: AttendanceMutationRecord[] }>();
-  return Array.isArray(payload.records) ? payload.records : [];
 }
