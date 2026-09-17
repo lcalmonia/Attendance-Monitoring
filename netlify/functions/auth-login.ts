@@ -15,43 +15,27 @@ export default async (req: Request) => {
 
     if (!loginId || !password) return json({ error: "Employee ID or mobile number and password are required." }, 400);
 
-    // Normal logins use indexed columns in auth_accounts. Mobile login must
-    // not scan the large JSONB app_state document on every request.
-    let account: Account | undefined;
-    try {
+    // Look up by employee ID first. This only depends on the original auth schema.
+    let account = (await db.sql<Account>`
+      SELECT user_id, password_hash, must_change_password, is_active
+      FROM auth_accounts
+      WHERE login_id = ${loginId}
+      LIMIT 1
+    `)[0];
+
+    // Older deploy-preview databases may not yet have migration 0003's
+    // mobile_login column. Fall back to the user's mobile number in app_state
+    // so mobile login remains compatible without referencing that column.
+    if (!account && mobileLogin.length >= 10) {
       account = (await db.sql<Account>`
-        SELECT user_id, password_hash, must_change_password, is_active
-        FROM auth_accounts
-        WHERE login_id = ${loginId}
-           OR (${mobileLogin.length >= 10 ? mobileLogin : ""} <> '' AND mobile_login = ${mobileLogin})
+        SELECT account.user_id, account.password_hash, account.must_change_password, account.is_active
+        FROM auth_accounts AS account
+        JOIN app_state AS state_row ON state_row.id = 'default'
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state_row.state->'users', '[]'::jsonb)) AS user_data(value)
+        WHERE account.user_id = user_data.value->>'id'
+          AND RIGHT(REGEXP_REPLACE(COALESCE(user_data.value->>'mobileNumber', ''), '[^0-9]', '', 'g'), 10) = ${mobileLogin}
         LIMIT 1
       `)[0];
-    } catch (error) {
-      // Older databases may not have migration 0003 yet. Only fall back when
-      // the mobile_login column is genuinely unavailable.
-      const message = String(error instanceof Error ? error.message : error).toLowerCase();
-      if (!message.includes("mobile_login") && !message.includes("does not exist") && !message.includes("column")) throw error;
-
-      if (mobileLogin.length >= 10) {
-        account = (await db.sql<Account>`
-          SELECT account.user_id, account.password_hash, account.must_change_password, account.is_active
-          FROM auth_accounts AS account
-          JOIN app_state AS state_row ON state_row.id = 'default'
-          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state_row.state->'users', '[]'::jsonb)) AS user_data(value)
-          WHERE account.user_id = user_data.value->>'id'
-            AND RIGHT(REGEXP_REPLACE(COALESCE(user_data.value->>'mobileNumber', ''), '[^0-9]', '', 'g'), 10) = ${mobileLogin}
-          LIMIT 1
-        `)[0];
-      }
-
-      if (!account) {
-        account = (await db.sql<Account>`
-          SELECT user_id, password_hash, must_change_password, is_active
-          FROM auth_accounts
-          WHERE login_id = ${loginId}
-          LIMIT 1
-        `)[0];
-      }
     }
 
     const passwordToVerify = account?.must_change_password ? normalizeLogin(password) : password;
