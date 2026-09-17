@@ -5,6 +5,7 @@ import { AttendanceRecord } from '../types';
 
 type AppContextValue = ReturnType<typeof useBaseApp>;
 type PendingAttendance = { employeeId: string; recordId?: string; source: 'clock' | 'admin' };
+const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 const toMinutes = (value: string) => {
   const [hours, minutes] = value.slice(0, 5).split(':').map(Number);
