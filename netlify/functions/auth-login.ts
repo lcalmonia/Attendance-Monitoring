@@ -8,32 +8,59 @@ export default async (req: Request) => {
 
   try {
     const body = await req.json().catch(() => null);
-    const rawLogin = String(body?.loginId || "");
+    const rawLogin = String(body?.loginId || "").trim();
     const loginId = normalizeLogin(rawLogin);
     const mobileLogin = normalizeMobile(rawLogin);
     const password = String(body?.password || "");
 
     if (!loginId || !password) return json({ error: "Employee ID or mobile number and password are required." }, 400);
 
-    // Look up by employee ID first. This only depends on the original auth schema.
-    let account = (await db.sql<Account>`
-      SELECT user_id, password_hash, must_change_password, is_active
-      FROM auth_accounts
-      WHERE login_id = ${loginId}
-      LIMIT 1
-    `)[0];
+    let account: Account | undefined;
+    const looksLikeMobile = /^[+()\-\s\d]+$/.test(rawLogin) && mobileLogin.length >= 10;
 
-    // Older deploy-preview databases may not yet have migration 0003's
-    // mobile_login column. Fall back to the user's mobile number in app_state
-    // so mobile login remains compatible without referencing that column.
-    if (!account && mobileLogin.length >= 10) {
+    if (looksLikeMobile) {
+      // Mobile login uses the dedicated, indexed auth_accounts.mobile_login
+      // field. This avoids scanning the JSONB users array on every login.
+      try {
+        account = (await db.sql<Account>`
+          SELECT user_id, password_hash, must_change_password, is_active
+          FROM auth_accounts
+          WHERE mobile_login = ${mobileLogin}
+          LIMIT 1
+        `)[0];
+      } catch (mobileLookupError) {
+        // Compatibility for an older deploy-preview database where migration
+        // 0003 has not been applied yet. Do not hide unrelated DB failures.
+        const message = mobileLookupError instanceof Error ? mobileLookupError.message : String(mobileLookupError);
+        if (!/mobile_login|column .* does not exist|undefined column/i.test(message)) throw mobileLookupError;
+
+        account = (await db.sql<Account>`
+          SELECT account.user_id, account.password_hash, account.must_change_password, account.is_active
+          FROM auth_accounts AS account
+          JOIN app_state AS state_row ON state_row.id = 'default'
+          CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state_row.state->'users', '[]'::jsonb)) AS user_data(value)
+          WHERE account.user_id = user_data.value->>'id'
+            AND RIGHT(REGEXP_REPLACE(COALESCE(user_data.value->>'mobileNumber', ''), '[^0-9]', '', 'g'), 10) = ${mobileLogin}
+          LIMIT 1
+        `)[0];
+      }
+
+      // Preserve support for an Employee ID that happens to contain only
+      // digits, even when it looks like a mobile number.
+      if (!account) {
+        account = (await db.sql<Account>`
+          SELECT user_id, password_hash, must_change_password, is_active
+          FROM auth_accounts
+          WHERE login_id = ${loginId}
+          LIMIT 1
+        `)[0];
+      }
+    } else {
+      // Employee ID login uses the existing unique login_id index.
       account = (await db.sql<Account>`
-        SELECT account.user_id, account.password_hash, account.must_change_password, account.is_active
-        FROM auth_accounts AS account
-        JOIN app_state AS state_row ON state_row.id = 'default'
-        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state_row.state->'users', '[]'::jsonb)) AS user_data(value)
-        WHERE account.user_id = user_data.value->>'id'
-          AND RIGHT(REGEXP_REPLACE(COALESCE(user_data.value->>'mobileNumber', ''), '[^0-9]', '', 'g'), 10) = ${mobileLogin}
+        SELECT user_id, password_hash, must_change_password, is_active
+        FROM auth_accounts
+        WHERE login_id = ${loginId}
         LIMIT 1
       `)[0];
     }

@@ -70,8 +70,27 @@ export const authApi = {
     return data;
   },
   session: () => api("/api/auth/session") as Promise<Session>,
-  logout: async () => {
-    try { await api("/api/auth/logout", { method: "POST" }); } finally { clearAuthToken(); }
+  // Logout is intentionally client-responsive. Clear the local credential
+  // immediately so a slow/unavailable auth database cannot trap the user on
+  // the authenticated screen. The server revocation is sent as a keepalive
+  // request so it can complete after navigation when the platform permits it.
+  logout: () => {
+    const token = getAuthToken();
+    clearAuthToken();
+    if (token) {
+      void fetch("/api/auth/logout", {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      }).catch(() => {
+        // Local logout has already completed; server-side cleanup can retry
+        // on the next authenticated session lifecycle.
+      });
+    }
+    return Promise.resolve();
   },
   changePassword: (currentPassword: string, newPassword: string) =>
     api("/api/auth/change-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword }) }),

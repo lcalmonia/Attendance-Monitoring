@@ -21,6 +21,7 @@ import { ShieldCheck } from 'lucide-react';
 import { LoginScreen } from './components/LoginScreen';
 import { ChangePasswordScreen } from './components/ChangePasswordScreen';
 import { authApi, clearAuthToken, getAuthToken } from './services/auth';
+import type { Session } from './services/auth';
 
 const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const { currentUser } = useApp();
@@ -61,24 +62,23 @@ const MainLayout: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   );
 };
 
-const AuthenticatedApp: React.FC<{ onNeedLogin: () => void; onLogout: () => void }> = ({ onNeedLogin, onLogout }) => {
+const AuthenticatedApp: React.FC<{ session: Session; onNeedLogin: () => void; onLogout: () => void }> = ({ session, onNeedLogin, onLogout }) => {
   const { users, switchUser, isHydrated } = useApp();
   const [status, setStatus] = useState<'checking' | 'change_password' | 'ready'>('checking');
 
   useEffect(() => {
     if (!isHydrated) return;
-    authApi.session().then((session) => {
-      if (!session.authenticated || !session.userId) throw new Error('No session');
-      if (!users.some((user) => user.id === session.userId)) throw new Error('Authenticated user is missing from application state.');
-      switchUser(session.userId);
-      setStatus(session.mustChangePassword ? 'change_password' : 'ready');
-    }).catch(() => {
-      clearAuthToken();
+    if (!session.authenticated || !session.userId) {
       onNeedLogin();
-    });
-    // switchUser is a context action recreated by React; it is intentionally omitted
-    // because the effect should run when hydrated users change, not on every render.
-  }, [users, isHydrated, onNeedLogin]);
+      return;
+    }
+    if (!users.some((user) => user.id === session.userId)) {
+      onNeedLogin();
+      return;
+    }
+    switchUser(session.userId);
+    setStatus(session.mustChangePassword ? 'change_password' : 'ready');
+  }, [users, isHydrated, onNeedLogin, session.authenticated, session.userId, session.mustChangePassword]);
 
   if (!isHydrated || status === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
   if (status === 'change_password') return <ChangePasswordScreen onComplete={() => setStatus('ready')} />;
@@ -87,6 +87,7 @@ const AuthenticatedApp: React.FC<{ onNeedLogin: () => void; onLogout: () => void
 
 export default function App() {
   const [authState, setAuthState] = useState<'checking' | 'login' | 'authenticated'>('checking');
+  const [session, setSession] = useState<Session | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,23 +95,29 @@ export default function App() {
       setAuthState('login');
       return;
     }
-    authApi.session().then((session) => {
-      if (!cancelled) setAuthState(session.authenticated && session.userId ? 'authenticated' : 'login');
+    authApi.session().then((nextSession) => {
+      if (!cancelled) {
+        setSession(nextSession);
+        setAuthState(nextSession.authenticated && nextSession.userId ? 'authenticated' : 'login');
+      }
     }).catch(() => {
       if (!cancelled) {
         clearAuthToken();
+        setSession(null);
         setAuthState('login');
       }
     });
     return () => { cancelled = true; };
   }, []);
 
-  const handleAuthenticated = useCallback((_userId: string, _mustChangePassword: boolean) => {
+  const handleAuthenticated = useCallback((userId: string, mustChangePassword: boolean) => {
+    setSession({ authenticated: true, userId, mustChangePassword });
     setAuthState('authenticated');
   }, []);
 
   const handleNeedLogin = useCallback(() => {
     clearAuthToken();
+    setSession(null);
     setAuthState('login');
   }, []);
 
@@ -119,16 +126,18 @@ export default function App() {
       await authApi.logout();
     } finally {
       clearAuthToken();
+      setSession(null);
       setAuthState('login');
     }
   }, []);
 
   if (authState === 'checking') return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
   if (authState === 'login') return <LoginScreen onAuthenticated={handleAuthenticated} />;
+  if (!session) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Loading WorkSphere…</div>;
 
   return (
     <AppProvider>
-      <AuthenticatedApp onNeedLogin={handleNeedLogin} onLogout={handleLogout} />
+      <AuthenticatedApp session={session} onNeedLogin={handleNeedLogin} onLogout={handleLogout} />
     </AppProvider>
   );
 }
