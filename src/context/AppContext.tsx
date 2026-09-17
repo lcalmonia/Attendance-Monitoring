@@ -78,9 +78,70 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     const current = base.attendanceRecords.find((record) => record.id === recordId);
     if (!current) return;
 
+    let persistedUpdates = { ...updates };
+
+    // If Time In is edited, calculate the derived attendance fields here too.
+    // This prevents the immediate save from briefly persisting the old
+    // NOT_TIMED_IN status or stale late minutes before the recalculation effect runs.
+    if (updates.timeIn) {
+      const schedule = getScheduleForDate(base, current.employeeId, current.date);
+      const reqIn = schedule?.requiredTimeIn;
+      const reqOut = schedule?.requiredTimeOut;
+
+      if (schedule && reqIn && reqOut) {
+        const scheduledDay = !!schedule.enabled;
+        const actualIn = toMinutes(updates.timeIn);
+        const scheduledIn = toMinutes(reqIn);
+        const scheduledOut = toMinutes(reqOut);
+        const overnight = isOvernight(reqIn, reqOut);
+        const outsideTime = scheduledDay && (
+          actualIn < scheduledIn || (!overnight && actualIn > scheduledOut)
+        );
+        const compensation = base.compensations.find((item) => item.employeeId === current.employeeId);
+        const lateMinutes = scheduledDay && !outsideTime ? Math.max(0, actualIn - scheduledIn) : 0;
+        const lateOccurrences = lateMinutes > 0 ? 1 : 0;
+        const lateDeductions = Number((lateMinutes * (compensation?.perMinuteRate || 0)).toFixed(2));
+
+        let status: typeof current.status;
+        if (!scheduledDay) {
+          status = 'outside_scheduled_day';
+        } else if (outsideTime) {
+          status = 'outside_scheduled_time';
+        } else if (!updates.timeOut && !current.timeOut) {
+          status = 'present';
+        } else {
+          const effectiveTimeOut = updates.timeOut || current.timeOut;
+          if (!effectiveTimeOut) {
+            status = 'present';
+          } else {
+            let actualOut = toMinutes(effectiveTimeOut);
+            let normalizedReqOut = scheduledOut;
+            if (overnight && actualOut <= actualIn) actualOut += 24 * 60;
+            if (overnight && normalizedReqOut <= scheduledIn) normalizedReqOut += 24 * 60;
+            const countedStart = Math.max(actualIn, scheduledIn);
+            const countedEnd = Math.min(actualOut, normalizedReqOut);
+            const breakMinutes = current.breakOut && (updates.breakIn || current.breakIn)
+              ? elapsedMinutes(current.breakOut.slice(0, 5), (updates.breakIn || current.breakIn)!.slice(0, 5))
+              : current.actualBreakMinutes || 0;
+            const totalWorkHours = Number((Math.max(0, countedEnd - countedStart - breakMinutes) / 60).toFixed(2));
+            status = totalWorkHours < 4 ? 'incomplete_duty' : 'present';
+            persistedUpdates = { ...persistedUpdates, totalWorkHours };
+          }
+        }
+
+        persistedUpdates = {
+          ...persistedUpdates,
+          lateMinutes,
+          lateOccurrences,
+          lateDeductions,
+          status,
+        };
+      }
+    }
+
     const adjustedRecord = {
       ...current,
-      ...updates,
+      ...persistedUpdates,
       isAdjusted: true,
       adjustedBy: base.currentUser.fullName,
       adjustedReason: reason,
@@ -88,7 +149,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     };
 
     // Update React state first so the screen changes immediately.
-    base.adjustAttendance(recordId, updates, reason);
+    base.adjustAttendance(recordId, persistedUpdates, reason);
 
     if (!base.isHydrated) return;
 
