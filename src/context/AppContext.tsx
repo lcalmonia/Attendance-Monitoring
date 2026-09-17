@@ -78,6 +78,81 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods]);
 
+  // Recalculate derived attendance fields after an admin edits Time In.
+  // Date-specific schedules remain authoritative; weekly schedules are only fallback.
+  useEffect(() => {
+    base.attendanceRecords.forEach((record) => {
+      if (!record.isAdjusted || !record.timeIn) return;
+
+      const schedule = getScheduleForDate(base, record.employeeId, record.date);
+      if (!schedule) return;
+
+      const scheduledDay = !!schedule.enabled;
+      const reqIn = schedule.requiredTimeIn;
+      const reqOut = schedule.requiredTimeOut;
+      if (!reqIn || !reqOut) return;
+
+      const actualIn = toMinutes(record.timeIn);
+      const scheduledIn = toMinutes(reqIn);
+      const scheduledOut = toMinutes(reqOut);
+      const overnight = isOvernight(reqIn, reqOut);
+      const outsideTime = scheduledDay && (
+        actualIn < scheduledIn || (!overnight && actualIn > scheduledOut)
+      );
+
+      const lateMinutes = scheduledDay && !outsideTime
+        ? Math.max(0, actualIn - scheduledIn)
+        : 0;
+      const lateOccurrences = lateMinutes > 0 ? 1 : 0;
+      const compensation = base.compensations.find((c) => c.employeeId === record.employeeId);
+      const lateDeductions = Number((lateMinutes * (compensation?.perMinuteRate || 0)).toFixed(2));
+
+      let status: typeof record.status;
+      if (!scheduledDay) {
+        status = 'outside_scheduled_day';
+      } else if (outsideTime) {
+        status = 'outside_scheduled_time';
+      } else if (!record.timeOut) {
+        // A valid edited Time In is a valid attendance event. Do not retain the
+        // stale NOT_TIMED_IN value that was originally created before the edit.
+        status = 'present';
+      } else {
+        let actualOut = toMinutes(record.timeOut);
+        let normalizedReqOut = scheduledOut;
+        if (overnight && actualOut <= actualIn) actualOut += 24 * 60;
+        if (overnight && normalizedReqOut <= scheduledIn) normalizedReqOut += 24 * 60;
+
+        const countedStart = Math.max(actualIn, scheduledIn);
+        const countedEnd = Math.min(actualOut, normalizedReqOut);
+        const breakMinutes = record.breakOut && record.breakIn
+          ? elapsedMinutes(record.breakOut.slice(0, 5), record.breakIn.slice(0, 5))
+          : record.actualBreakMinutes || 0;
+        const totalWorkHours = Number((Math.max(0, countedEnd - countedStart - breakMinutes) / 60).toFixed(2));
+        status = totalWorkHours < 4 ? 'incomplete_duty' : 'present';
+      }
+
+      if (
+        record.lateMinutes === lateMinutes &&
+        record.lateOccurrences === lateOccurrences &&
+        record.lateDeductions === lateDeductions &&
+        record.status === status
+      ) {
+        return;
+      }
+
+      base.adjustAttendance(
+        record.id,
+        {
+          lateMinutes,
+          lateOccurrences,
+          lateDeductions,
+          status,
+        },
+        'Automatic attendance recalculation after Time In adjustment'
+      );
+    });
+  }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods, base.compensations]);
+
   const recordAttendance = (employeeId: string, action: Parameters<AppContextValue['recordAttendance']>[1]) => {
     const now = new Date();
     const today = formatDate(now);
