@@ -4,7 +4,7 @@ import { deleteAttendanceRecord, upsertAttendanceRecord } from '../services/netl
 import { AttendanceRecord } from '../types';
 
 type AppContextValue = ReturnType<typeof useBaseApp>;
-type PendingAttendance = { employeeId: string; recordId?: string };
+type PendingAttendance = { employeeId: string; recordId?: string; source: 'clock' | 'admin' };
 
 const toMinutes = (value: string) => {
   const [hours, minutes] = value.slice(0, 5).split(':').map(Number);
@@ -102,7 +102,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
 
       void upsertAttendanceRecord(
         record as AttendanceRecord & { id: string; employeeId: string; businessId: string },
-        'clock'
+        item.source
       ).catch((error) => {
         console.error('Immediate attendance synchronization failed', error);
       });
@@ -115,9 +115,11 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
   // persistence path. The existing base action still performs the UI update,
   // audit logging, and derived payroll calculations.
   const adjustAttendance = (recordId: string, updates: Partial<AttendanceRecord>, reason: string) => {
+    const target = base.attendanceRecords.find((record) => record.id === recordId);
     pendingAttendanceRef.current.push({
-      employeeId: base.attendanceRecords.find((record) => record.id === recordId)?.employeeId || '',
+      employeeId: target?.employeeId || '',
       recordId,
+      source: base.currentUser.role === 'employee' ? 'clock' : 'admin',
     });
     base.adjustAttendance(recordId, updates, reason);
   };
@@ -138,7 +140,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     const overnight = getOvernightRecord(base, employeeId, today);
 
     if (!overnight) {
-      pendingAttendanceRef.current.push({ employeeId });
+      pendingAttendanceRef.current.push({ employeeId, source: 'clock' });
       const result = base.recordAttendance(employeeId, action);
       if (!result.success) {
         pendingAttendanceRef.current = pendingAttendanceRef.current.filter((item) => item.employeeId !== employeeId || item.recordId);
