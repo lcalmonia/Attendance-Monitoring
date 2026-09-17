@@ -1,8 +1,10 @@
-import React, { createContext, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useLayoutEffect, useRef } from 'react';
 import { AppProvider as BaseAppProvider, useApp as useBaseApp } from './AppContextBase';
+import { deleteAttendanceRecord, upsertAttendanceRecord } from '../services/netlifyState';
+import { AttendanceRecord } from '../types';
 
 type AppContextValue = ReturnType<typeof useBaseApp>;
-const AppContext = createContext<AppContextValue | undefined>(undefined);
+type PendingAttendance = { employeeId: string; recordId?: string };
 
 const toMinutes = (value: string) => {
   const [hours, minutes] = value.slice(0, 5).split(':').map(Number);
@@ -64,26 +66,85 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const base = useBaseApp();
+  const pendingAttendanceRef = useRef<PendingAttendance[]>([]);
+  const knownRecordsRef = useRef(new Map<string, string>());
+  const initializedSyncRef = useRef(false);
 
-  useEffect(() => {
-    base.attendanceRecords.forEach((record) => {
-      if (!record.timeIn || record.timeOut || record.status !== 'outside_scheduled_time') return;
-      const schedule = getScheduleForDate(base, record.employeeId, record.date);
-      if (!isOvernight(schedule?.requiredTimeIn, schedule?.requiredTimeOut)) return;
-      base.adjustAttendance(
-        record.id,
-        { status: 'not_timed_in', remarks: undefined },
-        'Automatic overnight shift clocking normalization'
-      );
+  // Attendance clock actions are mirrored to the record-level API immediately
+  // after React commits the changed record. This is independent from the
+  // 500ms whole-app persistence debounce in AppContextBase.
+  useLayoutEffect(() => {
+    const currentMap = new Map(base.attendanceRecords.map((record) => [record.id, JSON.stringify(record)]));
+
+    if (!initializedSyncRef.current) {
+      knownRecordsRef.current = currentMap;
+      initializedSyncRef.current = true;
+      return;
+    }
+
+    const pending = [...pendingAttendanceRef.current];
+    pendingAttendanceRef.current = [];
+
+    for (const item of pending) {
+      let record: AttendanceRecord | undefined;
+
+      if (item.recordId) {
+        record = base.attendanceRecords.find((candidate) => candidate.id === item.recordId);
+      } else {
+        const candidates = base.attendanceRecords
+          .filter((candidate) => candidate.employeeId === item.employeeId)
+          .filter((candidate) => !knownRecordsRef.current.has(candidate.id))
+          .sort((a, b) => `${a.date}_${a.timeIn || ''}`.localeCompare(`${b.date}_${b.timeIn || ''}`));
+        record = candidates[candidates.length - 1];
+      }
+
+      if (!record) continue;
+
+      void upsertAttendanceRecord(
+        record as AttendanceRecord & { id: string; employeeId: string; businessId: string },
+        'clock'
+      ).catch((error) => {
+        console.error('Immediate attendance synchronization failed', error);
+      });
+    }
+
+    knownRecordsRef.current = currentMap;
+  }, [base.attendanceRecords]);
+
+  // Admin and overnight adjustments go through the same immediate record-level
+  // persistence path. The existing base action still performs the UI update,
+  // audit logging, and derived payroll calculations.
+  const adjustAttendance = (recordId: string, updates: Partial<AttendanceRecord>, reason: string) => {
+    pendingAttendanceRef.current.push({
+      employeeId: base.attendanceRecords.find((record) => record.id === recordId)?.employeeId || '',
+      recordId,
     });
-  }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods]);
+    base.adjustAttendance(recordId, updates, reason);
+  };
+
+  const deleteAttendance = (recordId: string, reason: string) => {
+    const result = base.deleteAttendance(recordId, reason);
+    if (result.success) {
+      void deleteAttendanceRecord(recordId).catch((error) => {
+        console.error('Immediate attendance deletion synchronization failed', error);
+      });
+    }
+    return result;
+  };
 
   const recordAttendance = (employeeId: string, action: Parameters<AppContextValue['recordAttendance']>[1]) => {
     const now = new Date();
     const today = formatDate(now);
     const overnight = getOvernightRecord(base, employeeId, today);
 
-    if (!overnight) return base.recordAttendance(employeeId, action);
+    if (!overnight) {
+      pendingAttendanceRef.current.push({ employeeId });
+      const result = base.recordAttendance(employeeId, action);
+      if (!result.success) {
+        pendingAttendanceRef.current = pendingAttendanceRef.current.filter((item) => item.employeeId !== employeeId || item.recordId);
+      }
+      return result;
+    }
 
     const { record, schedule } = overnight;
     const comp = base.compensations.find((item) => item.employeeId === employeeId);
@@ -92,7 +153,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
 
     if (action === 'break_out') {
       if (record.breakOut) return { success: false, message: 'Break Out has already been recorded.' };
-      base.adjustAttendance(record.id, { breakOut: timeStr }, 'Overnight shift Break Out recorded after midnight');
+      adjustAttendance(record.id, { breakOut: timeStr }, 'Overnight shift Break Out recorded after midnight');
       return { success: true, message: `Break Out recorded at ${timeStr}.` };
     }
 
@@ -102,7 +163,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
       const breakMins = elapsedMinutes(record.breakOut.slice(0, 5), timeHHMM);
       const overBreakMinutes = Math.max(0, breakMins - record.requiredBreakMinutes);
       const overBreakDeductions = Number((overBreakMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      base.adjustAttendance(
+      adjustAttendance(
         record.id,
         { breakIn: timeStr, actualBreakMinutes: breakMins, overBreakMinutes, overBreakDeductions },
         'Overnight shift Break In recorded after midnight'
@@ -152,7 +213,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
         ? Number((comp.dailyRate * (record.holidayRateMultiplier - 1)).toFixed(2))
         : 0;
 
-      base.adjustAttendance(
+      adjustAttendance(
         record.id,
         {
           timeOut: timeStr,
@@ -180,7 +241,18 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     return base.recordAttendance(employeeId, action);
   };
 
-  return <AppContext.Provider value={{ ...base, recordAttendance }}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider
+      value={{
+        ...base,
+        recordAttendance,
+        adjustAttendance,
+        deleteAttendance,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
 };
 
 export const useApp = () => {
