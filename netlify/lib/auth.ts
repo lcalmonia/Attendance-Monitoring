@@ -27,13 +27,22 @@ export function hashPassword(
 export function verifyPassword(password: string, stored: string) {
   try {
     const [algorithm, salt, expectedHex] = String(stored || "").split(":");
-    if (algorithm !== "scrypt" || !salt || !expectedHex) return false;
+
+    // All WorkSphere-generated hashes use a 16-byte salt and a 64-byte
+    // scrypt result. Reject malformed/unbounded values before calling
+    // scryptSync so a bad stored hash can never force an oversized CPU/memory
+    // operation and make the login function appear to hang.
+    if (
+      algorithm !== "scrypt" ||
+      !/^[0-9a-f]{32}$/i.test(salt || "") ||
+      !/^[0-9a-f]{128}$/i.test(expectedHex || "")
+    ) {
+      return false;
+    }
 
     const expected = Buffer.from(expectedHex, "hex");
-    if (expected.length === 0) return false;
-
-    const actual = scryptSync(password, salt, expected.length);
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    const actual = scryptSync(password, salt, 64);
+    return timingSafeEqual(actual, expected);
   } catch {
     return false;
   }
