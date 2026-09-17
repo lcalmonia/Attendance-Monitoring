@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { AppProvider as BaseAppProvider, useApp as useBaseApp } from './AppContextBase';
 
 type AppContextValue = ReturnType<typeof useBaseApp>;
@@ -113,8 +113,6 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
       } else if (outsideTime) {
         status = 'outside_scheduled_time';
       } else if (!record.timeOut) {
-        // A valid edited Time In is a valid attendance event. Do not retain the
-        // stale NOT_TIMED_IN value that was originally created before the edit.
         status = 'present';
       } else {
         let actualOut = toMinutes(record.timeOut);
@@ -136,22 +134,57 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
         record.lateOccurrences === lateOccurrences &&
         record.lateDeductions === lateDeductions &&
         record.status === status
-      ) {
-        return;
-      }
+      ) return;
 
       base.adjustAttendance(
         record.id,
-        {
-          lateMinutes,
-          lateOccurrences,
-          lateDeductions,
-          status,
-        },
+        { lateMinutes, lateOccurrences, lateDeductions, status },
         'Automatic attendance recalculation after Time In adjustment'
       );
     });
   }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods, base.compensations]);
+
+  // Employee clock UI needs a logical "active shift" after midnight. The real
+  // attendance record stays dated on the shift-start date; this continuation is
+  // only exposed to the employee portal and is never persisted as a new record.
+  const employeeVisibleAttendance = useMemo(() => {
+    if (base.currentUser.role !== 'employee') return base.attendanceRecords;
+
+    const now = new Date();
+    const today = formatDate(now);
+    const hasTodayRecord = base.attendanceRecords.some(
+      (record) => record.employeeId === base.currentUser.id && record.date === today
+    );
+    if (hasTodayRecord) return base.attendanceRecords;
+
+    const previousDate = getPreviousDate(now);
+    const previousRecord = base.attendanceRecords.find(
+      (record) => record.employeeId === base.currentUser.id && record.date === previousDate && record.timeIn
+    );
+    if (!previousRecord) return base.attendanceRecords;
+
+    const schedule = getScheduleForDate(base, base.currentUser.id, previousDate);
+    if (!schedule?.requiredTimeIn || !schedule.requiredTimeOut || !isOvernight(schedule.requiredTimeIn, schedule.requiredTimeOut)) {
+      return base.attendanceRecords;
+    }
+
+    // Keep the previous shift visible for the post-midnight completion window.
+    // The actual record remains dated on the shift-start date.
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    let endMinutes = toMinutes(schedule.requiredTimeOut);
+    const continuationWindowEnd = endMinutes + 240; // up to 4 hours after scheduled end
+    if (currentMinutes > continuationWindowEnd) return base.attendanceRecords;
+
+    return [
+      ...base.attendanceRecords,
+      {
+        ...previousRecord,
+        id: `overnight-continuation-${previousRecord.id}`,
+        date: today,
+        remarks: previousRecord.remarks || 'Overnight shift continuation view',
+      },
+    ];
+  }, [base.attendanceRecords, base.currentUser, base.schedules, base.dateSchedules, base.payrollPeriods]);
 
   const recordAttendance = (employeeId: string, action: Parameters<AppContextValue['recordAttendance']>[1]) => {
     const now = new Date();
@@ -197,9 +230,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
       let actualOut = toMinutes(timeHHMM);
       if (actualOut <= actualIn) actualOut += 24 * 60;
 
-      if (actualOut < reqIn) {
-        return { success: false, message: 'Time Out is too early for the scheduled overnight shift.' };
-      }
+      if (actualOut < reqIn) return { success: false, message: 'Time Out is too early for the scheduled overnight shift.' };
 
       const outsideTime = actualIn < reqIn || actualIn > reqOut || actualOut < reqIn;
       const countedStart = Math.max(actualIn, reqIn);
@@ -216,11 +247,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
       const totalWorkHours = Number((totalWorkMins / 60).toFixed(2));
       const undertimeMinutes = Math.max(0, reqOut - actualOut);
       const undertimeDeductions = Number((undertimeMinutes * (comp?.perMinuteRate || 0)).toFixed(2));
-      const status = outsideTime
-        ? 'outside_scheduled_time'
-        : totalWorkHours < 4
-        ? 'incomplete_duty'
-        : 'present';
+      const status = outsideTime ? 'outside_scheduled_time' : totalWorkHours < 4 ? 'incomplete_duty' : 'present';
 
       const holiday = base.holidays.find((item) => item.date === record.date);
       const holidayDutyPay = record.isHoliday && record.holidayRateMultiplier && comp
@@ -255,7 +282,7 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     return base.recordAttendance(employeeId, action);
   };
 
-  return <AppContext.Provider value={{ ...base, recordAttendance }}>{children}</AppContext.Provider>;
+  return <AppContext.Provider value={{ ...base, attendanceRecords: employeeVisibleAttendance, recordAttendance }}>{children}</AppContext.Provider>;
 };
 
 export const useApp = () => {
