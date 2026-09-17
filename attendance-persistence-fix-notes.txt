@@ -1,1 +1,0 @@
-Attendance persistence note: shared-state hydration can race with a clock action. The client now reconciles the local attendance cache with the remote snapshot before hydration applies it, so a newly clocked-in record is not discarded while the GET is still in flight. Server-side attendance merging remains responsible for protecting records across devices.
