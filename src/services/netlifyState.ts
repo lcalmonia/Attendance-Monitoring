@@ -23,3 +23,23 @@ export async function saveAppState(state: PersistedAppState): Promise<void> {
   });
   if (!response.ok) throw new Error(`Unable to save shared application state (${response.status}).`);
 }
+
+export async function upsertAttendanceRecord(record: Record<string, unknown>): Promise<void> {
+  const response = await fetch("/api/attendance-mutation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "same-origin",
+    body: JSON.stringify({ action: "upsert", record }),
+  });
+  if (!response.ok) throw new Error(`Unable to persist attendance record (${response.status}).`);
+}
+
+export async function deleteAttendanceRecord(recordId: string): Promise<void> {
+  const response = await fetch("/api/attendance-mutation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    credentials: "same-origin",
+    body: JSON.stringify({ action: "delete", recordId }),
+  });
+  if (!response.ok) throw new Error(`Unable to delete attendance record (${response.status}).`);
+}
