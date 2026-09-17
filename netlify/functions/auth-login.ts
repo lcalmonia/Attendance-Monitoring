@@ -16,12 +16,11 @@ export default async (req: Request) => {
     if (!loginId || !password) return json({ error: "Employee ID or mobile number and password are required." }, 400);
 
     let account: Account | undefined;
-
-    // Mobile login uses the dedicated, indexed auth_accounts.mobile_login field.
-    // This avoids scanning the large JSONB users array in app_state on every
-    // mobile-number login and keeps mobile login independent of app-state load.
     const looksLikeMobile = /^[+()\-\s\d]+$/.test(rawLogin) && mobileLogin.length >= 10;
+
     if (looksLikeMobile) {
+      // Mobile login uses the dedicated, indexed auth_accounts.mobile_login
+      // field. This avoids scanning the JSONB users array on every login.
       try {
         account = (await db.sql<Account>`
           SELECT user_id, password_hash, must_change_password, is_active
@@ -42,6 +41,17 @@ export default async (req: Request) => {
           CROSS JOIN LATERAL jsonb_array_elements(COALESCE(state_row.state->'users', '[]'::jsonb)) AS user_data(value)
           WHERE account.user_id = user_data.value->>'id'
             AND RIGHT(REGEXP_REPLACE(COALESCE(user_data.value->>'mobileNumber', ''), '[^0-9]', '', 'g'), 10) = ${mobileLogin}
+          LIMIT 1
+        `)[0];
+      }
+
+      // Preserve support for an Employee ID that happens to contain only
+      // digits, even when it looks like a mobile number.
+      if (!account) {
+        account = (await db.sql<Account>`
+          SELECT user_id, password_hash, must_change_password, is_active
+          FROM auth_accounts
+          WHERE login_id = ${loginId}
           LIMIT 1
         `)[0];
       }
