@@ -70,6 +70,21 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
   const knownRecordsRef = useRef(new Map<string, string>());
   const initializedSyncRef = useRef(false);
 
+  // Preserve the existing overnight normalization behavior from the tested
+  // attendance flow. This only repairs the status of an open overnight record.
+  useEffect(() => {
+    base.attendanceRecords.forEach((record) => {
+      if (!record.timeIn || record.timeOut || record.status !== 'outside_scheduled_time') return;
+      const schedule = getScheduleForDate(base, record.employeeId, record.date);
+      if (!isOvernight(schedule?.requiredTimeIn, schedule?.requiredTimeOut)) return;
+      base.adjustAttendance(
+        record.id,
+        { status: 'not_timed_in', remarks: undefined },
+        'Automatic overnight shift clocking normalization'
+      );
+    });
+  }, [base.attendanceRecords, base.schedules, base.dateSchedules, base.payrollPeriods]);
+
   // Attendance clock actions are mirrored to the record-level API immediately
   // after React commits the changed record. This is independent from the
   // 500ms whole-app persistence debounce in AppContextBase.
@@ -140,10 +155,19 @@ const OvernightAttendanceBridge: React.FC<{ children: React.ReactNode }> = ({ ch
     const overnight = getOvernightRecord(base, employeeId, today);
 
     if (!overnight) {
-      pendingAttendanceRef.current.push({ employeeId, source: 'clock' });
+      const existingToday = base.attendanceRecords.find(
+        (record) => record.employeeId === employeeId && record.date === today
+      );
+      pendingAttendanceRef.current.push({
+        employeeId,
+        recordId: action === 'time_in' ? undefined : existingToday?.id,
+        source: 'clock',
+      });
       const result = base.recordAttendance(employeeId, action);
       if (!result.success) {
-        pendingAttendanceRef.current = pendingAttendanceRef.current.filter((item) => item.employeeId !== employeeId || item.recordId);
+        pendingAttendanceRef.current = pendingAttendanceRef.current.filter(
+          (item) => item.employeeId !== employeeId || item.recordId !== existingToday?.id
+        );
       }
       return result;
     }
