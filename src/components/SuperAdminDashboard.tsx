@@ -65,37 +65,41 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ setAct
   // Overtime pending review
   const pendingOvertime = overtimeRecords.filter((ot) => ot.status === 'pending');
 
-  // Active Payroll Period
+  // Active Payroll Period. The dashboard must remain renderable even when
+  // shared state is temporarily empty or a payroll period has not been created yet.
   const activePeriod =
     payrollPeriods.find((p) => p.status === 'projected' || p.status === 'for_review') ||
     payrollPeriods[1] ||
-    payrollPeriods[0];
+    payrollPeriods[0] ||
+    null;
 
-  // Calculate live estimates across all employees for active period
-  const allCalculations = activeEmployees.map((emp) => {
-    const comp = compensations.find((c) => c.employeeId === emp.id) || compensations[0];
-    const sched = schedules.find((s) => s.employeeId === emp.id) || schedules[0];
-    const biz = businesses.find((b) => b.id === emp.businessId);
+  // Calculate live estimates only when a real payroll period exists.
+  const allCalculations = activePeriod
+    ? activeEmployees.map((emp) => {
+        const comp = compensations.find((c) => c.employeeId === emp.id) || compensations[0];
+        const sched = schedules.find((s) => s.employeeId === emp.id) || schedules[0];
+        const biz = businesses.find((b) => b.id === emp.businessId);
 
-    return calculateEmployeePayroll({
-      employee: emp,
-      businessName: biz?.name || 'CV Group',
-      compensation: comp,
-      schedule: sched,
-      period: activePeriod,
-      attendanceRecords,
-      overtimeRecords,
-      holidays,
-      incentivePrograms,
-      employeeDeductions,
-    });
-  });
+        return calculateEmployeePayroll({
+          employee: emp,
+          businessName: biz?.name || 'CV Group',
+          compensation: comp,
+          schedule: sched,
+          period: activePeriod,
+          attendanceRecords,
+          overtimeRecords,
+          holidays,
+          incentivePrograms,
+          employeeDeductions,
+        });
+      })
+    : [];
 
   const totalEstimatedGross = allCalculations.reduce((acc, c) => acc + c.grossEarnings, 0);
   const totalEstimatedNet = allCalculations.reduce((acc, c) => acc + c.netSalary, 0);
   const totalEstimatedDeductions = allCalculations.reduce((acc, c) => acc + c.totalDeductions, 0);
   const totalApprovedOTPay = allCalculations.reduce((acc, c) => acc + c.approvedOvertimePay, 0);
-  const recordsRequiringReview = pendingOvertime.length + (activePeriod.status === 'for_review' ? 1 : 0);
+  const recordsRequiringReview = pendingOvertime.length + (activePeriod?.status === 'for_review' ? 1 : 0);
 
   const handleApprove = (id: string) => {
     reviewOvertime(id, 'approved', reviewNote || 'Approved by Super Admin');
@@ -128,7 +132,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ setAct
         <div className="flex items-center gap-3">
           <div className="text-right">
             <span className="text-[11px] text-slate-400 block uppercase font-medium">Current Cut-off</span>
-            <span className="text-sm font-bold text-white font-mono">{activePeriod.name}</span>
+            <span className="text-sm font-bold text-white font-mono">{activePeriod?.name || 'No payroll period available'}</span>
           </div>
           <button
             onClick={() => setActiveTab('payroll')}
@@ -311,7 +315,7 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ setAct
               <div>
                 <h3 className="text-sm font-bold text-slate-200">Active Payroll Overview</h3>
                 <p className="text-xs text-slate-400">
-                  {activePeriod.name} ({activePeriod.status.toUpperCase()})
+                  {activePeriod?.name || 'No payroll period available'} ({activePeriod?.status?.toUpperCase() || 'NOT SET'})
                 </p>
               </div>
               <button
@@ -359,12 +363,12 @@ export const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ setAct
             <div className="bg-blue-950/40 border border-blue-800/50 p-3 rounded-xl text-xs text-blue-200 space-y-1">
               <div className="flex justify-between">
                 <span>Disbursement Target Date:</span>
-                <strong className="font-mono">{activePeriod.payoutDate}</strong>
+                <strong className="font-mono">{activePeriod?.payoutDate || '—'}</strong>
               </div>
               <div className="flex justify-between">
                 <span>Cut-off Cycle Workflow:</span>
                 <span className="font-semibold capitalize text-blue-300">
-                  {activePeriod.status.replace('_', ' ')}
+                  {activePeriod?.status?.replace('_', ' ') || 'Not set'}
                 </span>
               </div>
             </div>
