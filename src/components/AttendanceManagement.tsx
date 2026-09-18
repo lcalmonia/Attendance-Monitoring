@@ -25,6 +25,7 @@ export const AttendanceManagement: React.FC = () => {
     employees,
     businesses,
     schedules,
+    dateSchedules,
     payrollPeriods,
     adjustAttendance,
     deleteAttendance,
@@ -248,14 +249,13 @@ export const AttendanceManagement: React.FC = () => {
                 <th className="py-3.5 px-2">Over Break</th>
                 <th className="py-3.5 px-2">Break Dur.</th>
                 <th className="py-3.5 px-2">Work Hrs</th>
-                <th className="py-3.5 px-3">Status</th>
                 {currentUser.role !== 'employee' && <th className="py-3.5 px-3 text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-medium">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="py-12 text-center text-slate-500">
+                  <td colSpan={currentUser.role !== 'employee' ? 14 : 13} className="py-12 text-center text-slate-500">
                     No attendance records match your active filters.
                   </td>
                 </tr>
@@ -264,7 +264,10 @@ export const AttendanceManagement: React.FC = () => {
                   const emp = employees.find((e) => e.id === rec.employeeId);
                   const biz = businesses.find((b) => b.id === rec.businessId);
                   const sched = schedules.find((s) => s.employeeId === rec.employeeId);
-                  const recDay = new Date(`${rec.date}T00:00:00`).getDay();
+                  const dateSchedule = dateSchedules.find(
+                    (item) => item.employeeId === rec.employeeId && item.date === rec.date
+                  );
+                  const recDay = new Date(`${rec.date}T12:00:00`).getDay();
                   const daySchedule = sched ? getScheduleForDay(sched, recDay) : undefined;
 
                   return (
@@ -292,7 +295,15 @@ export const AttendanceManagement: React.FC = () => {
 
                       {/* Schedule */}
                       <td className="py-3 px-3 whitespace-nowrap text-slate-400 text-[11px] font-mono">
-                        {daySchedule ? `${daySchedule.requiredTimeIn} - ${daySchedule.requiredTimeOut}` : sched ? `${sched.requiredTimeIn} - ${sched.requiredTimeOut}` : '08:00 - 17:00'}
+                        {dateSchedule
+                          ? dateSchedule.enabled
+                            ? `${dateSchedule.requiredTimeIn} - ${dateSchedule.requiredTimeOut}`
+                            : 'DAY OFF'
+                          : daySchedule
+                          ? `${daySchedule.requiredTimeIn} - ${daySchedule.requiredTimeOut}`
+                          : sched
+                          ? `${sched.requiredTimeIn} - ${sched.requiredTimeOut}`
+                          : '08:00 - 17:00'}
                       </td>
 
                       {/* Time In */}
@@ -358,29 +369,6 @@ export const AttendanceManagement: React.FC = () => {
                       {/* Work Hours */}
                       <td className="py-3 px-2 font-mono font-semibold text-blue-300">
                         {rec.totalWorkHours ? `${rec.totalWorkHours}h` : '—'}
-                      </td>
-
-                      {/* Attendance Status */}
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                            rec.status === 'present'
-                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                              : rec.status === 'absent'
-                              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                              : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          }`}
-                        >
-                          {rec.status.replace('_', ' ')}
-                        </span>
-                        {rec.isAdjusted && (
-                          <span
-                            className="block text-[9px] text-blue-400 mt-0.5 cursor-help"
-                            title={`Adjusted: ${rec.adjustedReason}`}
-                          >
-                            *Adjusted
-                          </span>
-                        )}
                       </td>
 
                       {/* Action */}
