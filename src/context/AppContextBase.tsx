@@ -993,7 +993,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         : 'present';
       const holidayDutyPay = existing.isHoliday && existing.holidayRateMultiplier && comp ? Number((comp.dailyRate * (existing.holidayRateMultiplier - 1)).toFixed(2)) : 0;
       setAttendanceRecords((prev) => prev.map((r) => r.id === existing!.id ? { ...r, timeOut: timeStr, actualBreakMinutes, overBreakMinutes, overBreakDeductions, totalWorkHours, undertimeMinutes, undertimeDeductions, holidayDutyPay, status } : r));
-      if (scheduledDay && !outsideTime) {
+      // Only evaluate overtime after the normalized actual end has passed
+      // the normalized scheduled end. Passing clock strings alone to
+      // evaluateOvertime can mistake a pre-midnight clock-out (e.g. 23:00 for
+      // a 00:00 scheduled end) for nearly a full day of overtime.
+      if (scheduledDay && !outsideTime && actualOutMin > reqOutMin) {
         const otEval = evaluateOvertime(timeHHMM, reqOut, systemSettings.minimumOvertimeMinutes, comp || INITIAL_COMPENSATIONS[2]);
         if (otEval.isEligible && otEval.potentialOvertimeMinutes > 0) {
           const newOT: OvertimeRecord = { id: `ot_${Date.now()}`, employeeId, businessId: emp.businessId, date: existing.date, requiredTimeOut: reqOut, actualTimeOut: timeHHMM, totalExcessMinutes: otEval.totalExcessMinutes, potentialOvertimeMinutes: otEval.potentialOvertimeMinutes, status: 'pending', calculatedPay: otEval.calculatedPay, rateApplied: comp?.overtimeRateOrMultiplier || 1.25, rateTypeApplied: comp?.overtimeRateType || 'multiplier' };
