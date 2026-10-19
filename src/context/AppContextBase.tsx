@@ -849,7 +849,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fallback = weeklySchedule ? getScheduleForDay(weeklySchedule, now.getDay()) : undefined;
     const activeSchedule = dateSchedule || fallback;
     const holidayToday = holidays.find((h) => h.date === todayStr);
-    let existing = attendanceRecords.find((r) => r.employeeId === employeeId && r.date === todayStr);
+    const todayExisting = attendanceRecords.find((r) => r.employeeId === employeeId && r.date === todayStr);
+    const dateForRecord = (recordDate: string) => {
+      const recordPeriod = payrollPeriods.find((item) => recordDate >= item.startDate && recordDate <= item.endDate);
+      const savedSchedule = dateSchedules.find((item) =>
+        item.employeeId === employeeId &&
+        item.date === recordDate &&
+        (!recordPeriod || item.payrollPeriodId === recordPeriod.id)
+      );
+      const recordDay = new Date(`${recordDate}T12:00:00`).getDay();
+      return {
+        period: recordPeriod,
+        schedule: savedSchedule || (weeklySchedule ? getScheduleForDay(weeklySchedule, recordDay) : undefined),
+      };
+    };
+    // Only attach a post-midnight action to yesterday's record when that record's
+    // saved schedule is explicitly an overnight shift. Never select an arbitrary
+    // stale open record based on elapsed hours alone.
+    const previousDateObject = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+    const previousDate = `${previousDateObject.getFullYear()}-${String(previousDateObject.getMonth() + 1).padStart(2, '0')}-${String(previousDateObject.getDate()).padStart(2, '0')}`;
+    const previousOpenRecord = !todayExisting && action !== 'time_in'
+      ? attendanceRecords.find((r) => r.employeeId === employeeId && r.date === previousDate && !!r.timeIn && !r.timeOut)
+      : undefined;
+    const previousDetails = previousOpenRecord ? dateForRecord(previousOpenRecord.date) : undefined;
+    const previousScheduleIsOvernight = !!previousDetails?.schedule?.enabled &&
+      toMinutes(previousDetails.schedule.requiredTimeOut) <= toMinutes(previousDetails.schedule.requiredTimeIn);
+    const previousPeriodIsOpen = !!previousDetails?.period &&
+      previousDetails.period.status !== 'finalized' && previousDetails.period.status !== 'paid';
+    let existing = todayExisting || (
+      previousOpenRecord && previousScheduleIsOvernight && previousPeriodIsOpen
+        ? previousOpenRecord
+        : undefined
+    );
 
     if (action === 'time_in') {
       if (existing?.timeIn) return { success: false, message: 'You have already recorded Time In for today.' };
@@ -894,6 +925,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     if (!existing || !existing.timeIn) return { success: false, message: 'Please record Time In first before breaks or Time Out.' };
+    const recordDetails = dateForRecord(existing.date);
+    const recordSchedule = recordDetails.schedule;
+    if (action === 'time_out' && (
+      !recordDetails.period ||
+      recordDetails.period.status === 'finalized' ||
+      recordDetails.period.status === 'paid'
+    )) {
+      return { success: false, message: 'This attendance record belongs to a closed or unavailable payroll period. Please contact your supervisor.' };
+    }
     if (action === 'break_out') {
       if (existing.breakOut) return { success: false, message: 'Break Out has already been recorded.' };
       setAttendanceRecords((prev) => prev.map((r) => r.id === existing!.id ? { ...r, breakOut: timeStr } : r));
@@ -910,13 +950,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     if (action === 'time_out') {
       if (existing.timeOut) return { success: false, message: 'Time Out has already been recorded for today.' };
-      const reqIn = activeSchedule?.requiredTimeIn || weeklySchedule?.requiredTimeIn || '08:00';
-      const reqOut = activeSchedule?.requiredTimeOut || weeklySchedule?.requiredTimeOut || '17:00';
-      const scheduledDay = !!activeSchedule?.enabled;
+      // Resolve schedule from the attendance record's original duty date, not
+      // today's date. A valid open 8-hour shift must not be rejected by an
+      // unrelated elapsed-time threshold.
+      const reqIn = recordSchedule?.requiredTimeIn || weeklySchedule?.requiredTimeIn || '08:00';
+      const reqOut = recordSchedule?.requiredTimeOut || weeklySchedule?.requiredTimeOut || '17:00';
+      const scheduledDay = !!recordSchedule?.enabled;
       const actualInMin = toMinutes(existing.timeIn);
-      const actualOutMin = toMinutes(timeHHMM);
+      const actualOutRawMin = toMinutes(timeHHMM);
       const reqInMin = toMinutes(reqIn);
-      const reqOutMin = toMinutes(reqOut);
+      const reqOutRawMin = toMinutes(reqOut);
+      const overnight = reqOutRawMin <= reqInMin;
+      const reqOutMin = overnight ? reqOutRawMin + 1440 : reqOutRawMin;
+      const actualOutMin = overnight && actualOutRawMin <= actualInMin
+        ? actualOutRawMin + 1440
+        : actualOutRawMin;
       const outsideTime = !scheduledDay || actualInMin < reqInMin || actualInMin > reqOutMin || actualOutMin < reqInMin;
       const countedStart = Math.max(actualInMin, reqInMin);
       const countedEnd = Math.min(actualOutMin, reqOutMin);
@@ -940,7 +988,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (scheduledDay && !outsideTime) {
         const otEval = evaluateOvertime(timeHHMM, reqOut, systemSettings.minimumOvertimeMinutes, comp || INITIAL_COMPENSATIONS[2]);
         if (otEval.isEligible && otEval.potentialOvertimeMinutes > 0) {
-          const newOT: OvertimeRecord = { id: `ot_${Date.now()}`, employeeId, businessId: emp.businessId, date: todayStr, requiredTimeOut: reqOut, actualTimeOut: timeHHMM, totalExcessMinutes: otEval.totalExcessMinutes, potentialOvertimeMinutes: otEval.potentialOvertimeMinutes, status: 'pending', calculatedPay: otEval.calculatedPay, rateApplied: comp?.overtimeRateOrMultiplier || 1.25, rateTypeApplied: comp?.overtimeRateType || 'multiplier' };
+          const newOT: OvertimeRecord = { id: `ot_${Date.now()}`, employeeId, businessId: emp.businessId, date: existing.date, requiredTimeOut: reqOut, actualTimeOut: timeHHMM, totalExcessMinutes: otEval.totalExcessMinutes, potentialOvertimeMinutes: otEval.potentialOvertimeMinutes, status: 'pending', calculatedPay: otEval.calculatedPay, rateApplied: comp?.overtimeRateOrMultiplier || 1.25, rateTypeApplied: comp?.overtimeRateType || 'multiplier' };
           setOvertimeRecords((prev) => [...prev, newOT]);
         }
       }
