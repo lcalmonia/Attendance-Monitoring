@@ -887,7 +887,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const isScheduledDay = !!activeSchedule?.enabled;
       const reqIn = activeSchedule?.requiredTimeIn || weeklySchedule?.requiredTimeIn || '08:00';
       const reqOut = activeSchedule?.requiredTimeOut || weeklySchedule?.requiredTimeOut || '17:00';
-      const outsideTime = isScheduledDay && (toMinutes(timeHHMM) < toMinutes(reqIn) || toMinutes(timeHHMM) > toMinutes(reqOut));
+      const reqInMinutes = toMinutes(reqIn);
+      const reqOutMinutes = toMinutes(reqOut);
+      const currentMinutes = toMinutes(timeHHMM);
+      const overnightSchedule = reqOutMinutes <= reqInMinutes;
+      const outsideTime = isScheduledDay && (
+        overnightSchedule
+          ? currentMinutes < reqInMinutes && currentMinutes > reqOutMinutes
+          : currentMinutes < reqInMinutes || currentMinutes > reqOutMinutes
+      );
       const late = isScheduledDay && !outsideTime ? computeLate(timeHHMM, reqIn, comp?.perMinuteRate || 0) : { lateMinutes: 0, lateOccurrences: 0, lateDeduction: 0 };
       const status: AttendanceRecord['status'] = !isScheduledDay
         ? 'outside_scheduled_day'
