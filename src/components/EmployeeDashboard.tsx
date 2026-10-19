@@ -64,11 +64,34 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ view = 'da
   const schedule = schedules.find((s) => s.employeeId === currentUser.id);
 
   const todayStr = `${currentTime.getFullYear()}-${String(currentTime.getMonth() + 1).padStart(2, '0')}-${String(currentTime.getDate()).padStart(2, '0')}`;
-  const todayRecord = attendanceRecords.find(
+  const sameDayRecord = attendanceRecords.find(
     (r) => r.employeeId === currentUser.id && r.date === todayStr
   );
-  const activePeriodForToday = payrollPeriods.find((p) => todayStr >= p.startDate && todayStr <= p.endDate);
-  const todaySchedule = dateSchedules.find((entry) => entry.employeeId === currentUser.id && entry.date === todayStr && (!activePeriodForToday || entry.payrollPeriodId === activePeriodForToday.id)) || (schedule ? getScheduleForDay(schedule, currentTime.getDay()) : undefined);
+  const previousDateObject = new Date(currentTime.getFullYear(), currentTime.getMonth(), currentTime.getDate() - 1, 12);
+  const previousDate = `${previousDateObject.getFullYear()}-${String(previousDateObject.getMonth() + 1).padStart(2, '0')}-${String(previousDateObject.getDate()).padStart(2, '0')}`;
+  const previousOpenRecord = !sameDayRecord
+    ? attendanceRecords.find((r) => r.employeeId === currentUser.id && r.date === previousDate && !!r.timeIn && !r.timeOut)
+    : undefined;
+  const previousRecordPeriod = previousOpenRecord
+    ? payrollPeriods.find((p) => previousOpenRecord.date >= p.startDate && previousOpenRecord.date <= p.endDate)
+    : undefined;
+  const previousRecordSchedule = previousOpenRecord
+    ? dateSchedules.find((entry) =>
+        entry.employeeId === currentUser.id &&
+        entry.date === previousOpenRecord.date &&
+        (!previousRecordPeriod || entry.payrollPeriodId === previousRecordPeriod.id)
+      ) || (schedule ? getScheduleForDay(schedule, new Date(previousOpenRecord.date + 'T12:00:00').getDay()) : undefined)
+    : undefined;
+  const previousRecordIsValidOvernight = !!previousOpenRecord &&
+    !!previousRecordPeriod &&
+    previousRecordPeriod.status !== 'finalized' &&
+    previousRecordPeriod.status !== 'paid' &&
+    !!previousRecordSchedule?.enabled &&
+    previousRecordSchedule.requiredTimeOut <= previousRecordSchedule.requiredTimeIn;
+  const todayRecord = sameDayRecord || (previousRecordIsValidOvernight ? previousOpenRecord : undefined);
+  const recordDateForClock = todayRecord?.date || todayStr;
+  const activePeriodForToday = payrollPeriods.find((p) => recordDateForClock >= p.startDate && recordDateForClock <= p.endDate);
+  const todaySchedule = dateSchedules.find((entry) => entry.employeeId === currentUser.id && entry.date === recordDateForClock && (!activePeriodForToday || entry.payrollPeriodId === activePeriodForToday.id)) || (schedule ? getScheduleForDay(schedule, new Date(recordDateForClock + 'T12:00:00').getDay()) : undefined);
 
   // The employee portal must always use the payroll period that contains today's date.
   // Status is intentionally ignored here because a projected/for_review flag does not
